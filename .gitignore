@@ -1,0 +1,13 @@
+node_modules
+node_modules/
+outputs/
+.DS_Store
+*.log
+
+# Runtime data
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Keep deploy/runtime data files out of git by default
+data/budget-flow.json

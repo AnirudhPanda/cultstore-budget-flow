@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CultStore Budget Flow</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css?v=10" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Do I Have The Money?</p>
+          <h1>Add your damn POs</h1>
+          <div class="hero-actions">
+            <button class="primary-btn" id="jumpToForm">Log a PO</button>
+            <span class="sync-chip" id="syncStatus">Connecting...</span>
+          </div>
+        </div>
+        <section class="hero-panel">
+          <div class="hero-panel-top">
+            <span>Budget Pulse</span>
+            <strong id="budgetPulse">Healthy</strong>
+          </div>
+          <div class="hero-ring">
+            <div class="hero-ring-core">
+              <span>Used</span>
+              <strong id="heroUtilisation">0%</strong>
+            </div>
+          </div>
+          <div class="hero-stats">
+            <div>
+              <span>Committed</span>
+              <strong id="heroCommitted">Rs 0</strong>
+            </div>
+            <div>
+              <span>Invoices</span>
+              <strong id="heroInvoiced">Rs 0</strong>
+            </div>
+          </div>
+        </section>
+      </header>
+
+      <main class="dashboard">
+        <section class="summary-grid" aria-label="Summary cards">
+          <article class="summary-card">
+            <span>Total Annual Budget</span>
+            <strong id="totalBudget">Rs 0</strong>
+            <small>Editable in budget setup</small>
+          </article>
+          <article class="summary-card">
+            <span>PO-Based Spend</span>
+            <strong id="poValue">Rs 0</strong>
+            <small>Entries tracked against a PO</small>
+          </article>
+          <article class="summary-card">
+            <span>Invoice-Based Spend</span>
+            <strong id="invoiceValue">Rs 0</strong>
+            <small>Entries tracked directly from invoices</small>
+          </article>
+          <article class="summary-card">
+            <span>Budget Remaining</span>
+            <strong id="remainingBudget">Rs 0</strong>
+            <small>Across all categories</small>
+          </article>
+        </section>
+
+        <section class="two-column-grid">
+          <article class="panel budget-panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">Budget setup</p>
+                <h2>Category budgets</h2>
+                <p class="panel-copy">Keep category limits current so every PO immediately reflects the right remaining budget.</p>
+              </div>
+              <button class="text-btn" id="resetBudgets">Reset defaults</button>
+            </div>
+            <div id="budgetList" class="budget-list"></div>
+          </article>
+
+          <article class="panel insights-panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">Live insights</p>
+                <h2>Where the money is going</h2>
+                <p class="panel-copy">A quick read on the categories, vendors, and owners driving the most spend right now.</p>
+              </div>
+            </div>
+            <div class="insight-metrics">
+              <div>
+                <span>Most active category</span>
+                <strong id="topCategory">No entries yet</strong>
+              </div>
+              <div>
+                <span>Top vendor</span>
+                <strong id="topVendor">No entries yet</strong>
+              </div>
+              <div>
+                <span>Most active team member</span>
+                <strong id="topOwner">No entries yet</strong>
+              </div>
+            </div>
+            <div class="spend-bars" id="spendBars"></div>
+          </article>
+        </section>
+
+        <section class="two-column-grid quarter-layout">
+          <article class="panel quarter-panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">Quarter tracking</p>
+                <h2>Financial year pacing</h2>
+                <p class="panel-copy">Transactions are grouped automatically by date into AMJ, JAS, OND, and JFM so you can track spending rhythm through the year.</p>
+              </div>
+            </div>
+            <div class="quarter-grid" id="quarterGrid"></div>
+          </article>
+
+          <article class="panel quarter-breakdown-panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">Category by quarter</p>
+                <h2>Quarter-wise category view</h2>
+                <p class="panel-copy">Use this to see which category is driving spend in each quarter instead of only looking at the full-year total.</p>
+              </div>
+            </div>
+            <div class="quarter-table-wrap">
+              <table class="quarter-table">
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th>AMJ</th>
+                    <th>JAS</th>
+                    <th>OND</th>
+                    <th>JFM</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody id="quarterTableBody"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section class="two-column-grid form-layout">
+          <article class="panel form-panel" id="poFormPanel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">Quick entry</p>
+                <h2>Log a new purchase order</h2>
+                <p class="panel-copy">Capture the essential details now. Choose whether this spend is PO-based or invoice-based, then track payment progress later in the transaction table.</p>
+              </div>
+            </div>
+            <form id="poForm" class="po-form">
+              <div class="field">
+                <label for="owner">Team member</label>
+                <input id="owner" name="owner" type="text" placeholder="Anirudh" required />
+              </div>
+              <div class="field">
+                <label for="poNumber">PO number</label>
+                <input id="poNumber" name="poNumber" type="text" placeholder="PO-2026-014" required />
+              </div>
+              <div class="field">
+                <label for="poDate">PO date</label>
+                <input id="poDate" name="poDate" type="date" required />
+              </div>
+              <div class="field">
+                <label for="category">Category</label>
+                <select id="category" name="category" required></select>
+              </div>
+              <div class="field">
+                <label for="spendType">Spend type</label>
+                <select id="spendType" name="spendType" required>
+                  <option value="Influencer">Influencer</option>
+                  <option value="Event">Event</option>
+                  <option value="Partnership">Partnership</option>
+                  <option value="Social Media">Social Media</option>
+                  <option value="Production">Production</option>
+                  <option value="Agency Retainer">Agency Retainer</option>
+                  <option value="Travel">Travel</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="vendor">Agency or vendor</label>
+                <input id="vendor" name="vendor" type="text" placeholder="Alpha Talent" required />
+              </div>
+              <div class="field">
+                <label for="recordType">Transaction basis</label>
+                <select id="recordType" name="recordType" required>
+                  <option value="PO">PO-based</option>
+                  <option value="Invoice">Invoice-based</option>
+                </select>
+              </div>
+              <div class="field full-width">
+                <label for="purpose">What is this being spent on?</label>
+                <input
+                  id="purpose"
+                  name="purpose"
+                  type="text"
+                  placeholder="Launch event creator fee"
+                  required
+                />
+              </div>
+              <div class="field">
+                <label for="amount" id="amountLabel">PO amount</label>
+                <input id="amount" name="amount" type="number" min="0" step="0.01" placeholder="125000" required />
+              </div>
+              <div class="field">
+                <label for="notes">Notes</label>
+                <input id="notes" name="notes" type="text" placeholder="Optional comments" />
+              </div>
+              <div class="form-actions full-width">
+                <button class="primary-btn" type="submit">Save PO</button>
+                <button class="ghost-btn" type="button" id="clearForm">Clear</button>
+                <button class="ghost-btn" type="button" id="resetApp">Reset all data</button>
+              </div>
+              <p class="form-message" id="formMessage" aria-live="polite"></p>
+            </form>
+          </article>
+
+          <article class="panel workflow-panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">How teams will use this</p>
+                <h2>Smooth enough for daily work</h2>
+                <p class="panel-copy">Designed so the team can log fast, update later, and keep the budget picture trustworthy.</p>
+              </div>
+            </div>
+            <div class="workflow-list">
+              <div>
+                <span>1</span>
+                <p>Each teammate logs the PO the moment it is raised.</p>
+              </div>
+              <div>
+                <span>2</span>
+                <p>The category budget instantly reflects committed spend.</p>
+              </div>
+              <div>
+                <span>3</span>
+                <p>For invoice-only vendors, the team logs the invoice directly instead of forcing a PO flow.</p>
+              </div>
+              <div>
+                <span>4</span>
+                <p>You can filter by owner, vendor, category, or status any time.</p>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel table-panel">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Transaction view</p>
+              <h2>All purchase orders</h2>
+              <p class="panel-copy">Search, filter, and update status inline as invoices land, payments clear, or delays happen.</p>
+            </div>
+            <div class="table-actions">
+              <input id="searchInput" type="search" placeholder="Search vendor, PO, owner..." />
+              <select id="filterCategory">
+                <option value="all">All categories</option>
+              </select>
+              <select id="filterStatus">
+                <option value="all">All statuses</option>
+                <option value="Raised">Raised</option>
+                <option value="Invoiced">Invoiced</option>
+                <option value="Paid">Paid</option>
+                <option value="Delayed">Delayed</option>
+                <option value="Cancelled">Cancelled</option>
+              </select>
+              <button class="ghost-btn export-btn" type="button" id="downloadSheet">Download Sheet</button>
+            </div>
+          </div>
+          <div class="table-meta">
+            <span>Status is managed here for active transactions.</span>
+            <span>Use filters to review one category, vendor, or payment stage at a time.</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Team member</th>
+                  <th>PO number</th>
+                  <th>Date</th>
+                  <th>Category</th>
+                  <th>Spend type</th>
+                  <th>Vendor</th>
+                  <th>Basis</th>
+                  <th>Purpose</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="poTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <template id="budgetItemTemplate">
+      <div class="budget-item">
+        <div class="budget-item-top">
+          <div>
+            <strong class="budget-name"></strong>
+            <span class="budget-stats"></span>
+          </div>
+          <label>
+            Budget
+            <input class="budget-input" type="number" min="0" step="0.01" />
+          </label>
+        </div>
+        <div class="budget-track">
+          <div class="budget-fill"></div>
+        </div>
+      </div>
+    </template>
+
+    <script src="./app.js?v=10"></script>
+  </body>
+</html>
