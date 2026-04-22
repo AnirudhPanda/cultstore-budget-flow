@@ -461,6 +461,17 @@ label {
   color: var(--mint);
 }
 
+.brand-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  background: rgba(95, 104, 109, 0.12);
+  color: var(--ink);
+}
+
 .budget-input:hover,
 .field input:hover,
 .field select:hover,
@@ -494,6 +505,36 @@ label {
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--mint), #58a98c);
+}
+
+.budget-sublist {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(23, 33, 38, 0.08);
+}
+
+.budget-subitem {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(23, 33, 38, 0.06);
+}
+
+.budget-subitem span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.brand-budget-input {
+  min-width: 140px;
 }
 
 .insight-metrics {
@@ -533,6 +574,10 @@ label {
 .field {
   display: grid;
   gap: 8px;
+}
+
+.hidden {
+  display: none;
 }
 
 .field label {
@@ -760,13 +805,13 @@ tbody tr:hover {
   transition: transform 160ms ease, background 160ms ease;
 }
 
-th:nth-child(10),
-td:nth-child(10) {
+th:nth-child(11),
+td:nth-child(11) {
   width: 176px;
 }
 
-th:nth-child(11),
-td:nth-child(11) {
+th:nth-child(12),
+td:nth-child(12) {
   width: 92px;
   text-align: center;
 }

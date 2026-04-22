@@ -6,9 +6,14 @@ const defaultBudgets = {
   "Indoor Equipment": 900000,
   Cycles: 1400000
 };
+const defaultFootwearBrandBudgets = {
+  Cult: 500000,
+  Avant: 500000
+};
 
 const state = {
   budgets: { ...defaultBudgets },
+  footwearBrandBudgets: { ...defaultFootwearBrandBudgets },
   entries: []
 };
 
@@ -17,6 +22,8 @@ const refs = {
   budgetList: document.getElementById("budgetList"),
   spendBars: document.getElementById("spendBars"),
   categorySelect: document.getElementById("category"),
+  brandField: document.getElementById("brandField"),
+  brandSelect: document.getElementById("brand"),
   filterCategory: document.getElementById("filterCategory"),
   poForm: document.getElementById("poForm"),
   poTableBody: document.getElementById("poTableBody"),
@@ -54,6 +61,7 @@ async function init() {
   setDefaultDate();
   updateAmountLabel();
   populateCategoryOptions();
+  updateBrandField();
   await refreshState();
 }
 
@@ -66,12 +74,16 @@ function bindEvents() {
     refs.poForm.reset();
     setDefaultDate();
     updateAmountLabel();
+    updateBrandField();
     setFormMessage("");
   });
   refs.resetBudgets.addEventListener("click", async () => {
     await apiFetch("/api/budgets", {
       method: "PUT",
-      body: JSON.stringify({ budgets: defaultBudgets })
+      body: JSON.stringify({
+        budgets: defaultBudgets,
+        footwearBrandBudgets: defaultFootwearBrandBudgets
+      })
     });
     await refreshState("Budgets reset");
   });
@@ -87,9 +99,11 @@ function bindEvents() {
     refs.poForm.reset();
     setDefaultDate();
     updateAmountLabel();
+    updateBrandField();
   });
   refs.downloadSheet.addEventListener("click", downloadSheet);
   refs.recordType.addEventListener("change", updateAmountLabel);
+  refs.categorySelect.addEventListener("change", updateBrandField);
 }
 
 function setDefaultDate() {
@@ -106,10 +120,17 @@ async function refreshState(message = "Connected") {
         Number(nextState?.budgets?.[category]) || defaultAmount
       ])
     );
+    state.footwearBrandBudgets = Object.fromEntries(
+      Object.entries(defaultFootwearBrandBudgets).map(([brand, defaultAmount]) => [
+        brand,
+        Number(nextState?.footwearBrandBudgets?.[brand]) || defaultAmount
+      ])
+    );
     state.entries = Array.isArray(nextState.entries)
       ? nextState.entries.map((entry) => ({
           ...entry,
           category: entry.category === "Massage Oils" ? "Massagers" : entry.category,
+          brand: normalizeBrand(entry),
           ownerName: normalizeOwnerName(entry),
           recordType: normalizeRecordType(entry.recordType),
           amount: normalizeAmount(entry)
@@ -139,6 +160,7 @@ function populateCategoryOptions() {
 
   refs.categorySelect.value = categories.includes(currentCategory) ? currentCategory : categories[0];
   refs.filterCategory.value = ["all", ...categories].includes(currentFilter) ? currentFilter : "all";
+  updateBrandField();
 }
 
 async function handleSubmit(event) {
@@ -152,6 +174,7 @@ async function handleSubmit(event) {
     poNumber: String(formData.get("poNumber")).trim(),
     poDate: String(formData.get("poDate")),
     category: String(formData.get("category")),
+    brand: String(formData.get("brand") || ""),
     spendType: String(formData.get("spendType")),
     vendor: String(formData.get("vendor")).trim(),
     recordType: String(formData.get("recordType")),
@@ -182,6 +205,7 @@ async function handleSubmit(event) {
   form.reset();
   setDefaultDate();
   updateAmountLabel();
+  updateBrandField();
   setFormMessage(`Saved ${entry.poNumber || "entry"} successfully.`, "success");
   await refreshState("Entry saved");
   submitButton.disabled = false;
@@ -234,6 +258,7 @@ function renderSummary() {
 function renderBudgetList() {
   refs.budgetList.innerHTML = "";
   const entriesByCategory = getSpendByCategory();
+  const footwearSpendByBrand = getSpendByFootwearBrand();
 
   Object.entries(state.budgets).forEach(([category, budget]) => {
     const amount = entriesByCategory[category] || 0;
@@ -250,10 +275,55 @@ function renderBudgetList() {
       state.budgets[category] = Number(event.target.value) || 0;
       await apiFetch("/api/budgets", {
         method: "PUT",
-        body: JSON.stringify({ budgets: state.budgets })
+        body: JSON.stringify({
+          budgets: state.budgets,
+          footwearBrandBudgets: state.footwearBrandBudgets
+        })
       });
       await refreshState("Budgets updated");
     });
+
+    if (category === "Footwear") {
+      const sublist = document.createElement("div");
+      sublist.className = "budget-sublist";
+
+      Object.entries(state.footwearBrandBudgets).forEach(([brand, brandBudget]) => {
+        const brandAmount = footwearSpendByBrand[brand] || 0;
+        const subitem = document.createElement("div");
+        subitem.className = "budget-subitem";
+        subitem.innerHTML = `
+          <div>
+            <strong>${escapeHtml(brand)}</strong>
+            <span>${formatCurrency(brandAmount)} used of ${formatCurrency(brandBudget)}</span>
+          </div>
+        `;
+
+        const label = document.createElement("label");
+        label.textContent = "Brand budget";
+        const brandInput = document.createElement("input");
+        brandInput.className = "budget-input brand-budget-input";
+        brandInput.type = "number";
+        brandInput.min = "0";
+        brandInput.step = "0.01";
+        brandInput.value = brandBudget;
+        brandInput.addEventListener("change", async (event) => {
+          state.footwearBrandBudgets[brand] = Number(event.target.value) || 0;
+          await apiFetch("/api/budgets", {
+            method: "PUT",
+            body: JSON.stringify({
+              budgets: state.budgets,
+              footwearBrandBudgets: state.footwearBrandBudgets
+            })
+          });
+          await refreshState("Budgets updated");
+        });
+        label.appendChild(brandInput);
+        subitem.appendChild(label);
+        sublist.appendChild(subitem);
+      });
+
+      node.appendChild(sublist);
+    }
 
     refs.budgetList.appendChild(node);
   });
@@ -339,6 +409,7 @@ function renderTable() {
         entry.ownerName,
         entry.poNumber,
         entry.category,
+        entry.brand,
         entry.spendType,
         entry.vendor,
         entry.purpose,
@@ -357,7 +428,7 @@ function renderTable() {
   if (filtered.length === 0) {
     refs.poTableBody.innerHTML = `
       <tr>
-        <td colspan="11" class="empty-state">No purchase orders match the current filters.</td>
+        <td colspan="12" class="empty-state">No purchase orders match the current filters.</td>
       </tr>
     `;
     return;
@@ -371,6 +442,7 @@ function renderTable() {
           <td>${escapeHtml(entry.poNumber)}</td>
           <td>${formatDate(entry.poDate)}</td>
           <td>${escapeHtml(entry.category)}</td>
+          <td>${entry.brand ? `<span class="brand-pill">${escapeHtml(entry.brand)}</span>` : "—"}</td>
           <td>${escapeHtml(entry.spendType)}</td>
           <td>${escapeHtml(entry.vendor)}</td>
           <td><span class="basis-pill" data-basis="${escapeHtml(entry.recordType)}">${escapeHtml(entry.recordType)}</span></td>
@@ -414,6 +486,14 @@ function getSpendByCategory() {
   return state.entries.reduce((acc, entry) => {
     if (entry.status === "Cancelled") return acc;
     acc[entry.category] = (acc[entry.category] || 0) + entry.amount;
+    return acc;
+  }, {});
+}
+
+function getSpendByFootwearBrand() {
+  return state.entries.reduce((acc, entry) => {
+    if (entry.status === "Cancelled" || entry.category !== "Footwear" || !entry.brand) return acc;
+    acc[entry.brand] = (acc[entry.brand] || 0) + entry.amount;
     return acc;
   }, {});
 }
@@ -479,6 +559,7 @@ function downloadSheet() {
     "Reference Number",
     "Date",
     "Category",
+    "Brand",
     "Spend Type",
     "Agency or Vendor",
     "Transaction Basis",
@@ -494,6 +575,7 @@ function downloadSheet() {
     entry.poNumber,
     entry.poDate,
     entry.category,
+    entry.brand,
     entry.spendType,
     entry.vendor,
     entry.recordType,
@@ -557,6 +639,19 @@ function updateAmountLabel() {
   refs.amountLabel.textContent = refs.recordType.value === "Invoice" ? "Invoice amount" : "PO amount";
 }
 
+function updateBrandField() {
+  const isFootwear = refs.categorySelect.value === "Footwear";
+  refs.brandField.classList.toggle("hidden", !isFootwear);
+  refs.brandSelect.disabled = !isFootwear;
+  if (isFootwear) {
+    refs.brandSelect.value = Object.hasOwn(defaultFootwearBrandBudgets, refs.brandSelect.value)
+      ? refs.brandSelect.value
+      : "Cult";
+  } else {
+    refs.brandSelect.value = "Cult";
+  }
+}
+
 function formatCurrency(value) {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -596,6 +691,11 @@ function normalizeAmount(entry) {
 
 function normalizeOwnerName(entry) {
   return String(entry.ownerName || entry.owner || "").trim() || "Unknown";
+}
+
+function normalizeBrand(entry) {
+  if (entry.category !== "Footwear") return "";
+  return Object.hasOwn(defaultFootwearBrandBudgets, entry.brand) ? entry.brand : "Cult";
 }
 
 function escapeHtml(value) {

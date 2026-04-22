@@ -26,6 +26,10 @@ const defaultBudgets = {
   "Indoor Equipment": 900000,
   Cycles: 1400000
 };
+const defaultFootwearBrandBudgets = {
+  Cult: 500000,
+  Avant: 500000
+};
 
 await fs.mkdir(dataDir, { recursive: true });
 const db = new DatabaseSync(dbPath);
@@ -66,6 +70,7 @@ async function handleApi(request, response, url) {
   if (request.method === "GET" && url.pathname === "/api/state") {
     respondJson(response, 200, {
       budgets: readBudgets(),
+      footwearBrandBudgets: readFootwearBrandBudgets(),
       entries: readEntries()
     });
     return;
@@ -74,8 +79,9 @@ async function handleApi(request, response, url) {
   if (request.method === "PUT" && url.pathname === "/api/budgets") {
     const body = await readJsonBody(request);
     const budgets = sanitizeBudgets(body.budgets);
-    writeBudgets(budgets);
-    respondJson(response, 200, { budgets, entries: readEntries() });
+    const footwearBrandBudgets = sanitizeFootwearBrandBudgets(body.footwearBrandBudgets);
+    writeBudgets(budgets, footwearBrandBudgets);
+    respondJson(response, 200, { budgets, footwearBrandBudgets, entries: readEntries() });
     return;
   }
 
@@ -143,6 +149,11 @@ function initializeDatabase() {
       amount INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS footwear_brand_budgets (
+      brand TEXT PRIMARY KEY,
+      amount INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS entries (
       id TEXT PRIMARY KEY,
       owner_user_id TEXT,
@@ -150,6 +161,7 @@ function initializeDatabase() {
       po_number TEXT NOT NULL,
       po_date TEXT NOT NULL,
       category TEXT NOT NULL,
+      brand TEXT NOT NULL,
       spend_type TEXT NOT NULL,
       vendor TEXT NOT NULL,
       record_type TEXT NOT NULL,
@@ -161,8 +173,18 @@ function initializeDatabase() {
     );
   `);
 
+  const entryColumns = db.prepare("PRAGMA table_info(entries)").all();
+  const hasBrandColumn = entryColumns.some((column) => column.name === "brand");
+  if (!hasBrandColumn) {
+    db.exec(`ALTER TABLE entries ADD COLUMN brand TEXT NOT NULL DEFAULT ''`);
+  }
+
   if (db.prepare("SELECT COUNT(*) AS count FROM budgets").get().count === 0) {
-    writeBudgets(defaultBudgets);
+    writeBudgets(defaultBudgets, defaultFootwearBrandBudgets);
+  }
+
+  if (db.prepare("SELECT COUNT(*) AS count FROM footwear_brand_budgets").get().count === 0) {
+    writeBudgets(readBudgets(), defaultFootwearBrandBudgets);
   }
 }
 
@@ -179,7 +201,10 @@ async function migrateLegacyJsonIfNeeded() {
 
   const raw = await fs.readFile(jsonDataPath, "utf8");
   const parsed = JSON.parse(raw);
-  writeBudgets(sanitizeBudgets(parsed.budgets));
+  writeBudgets(
+    sanitizeBudgets(parsed.budgets),
+    sanitizeFootwearBrandBudgets(parsed.footwearBrandBudgets)
+  );
 
   if (Array.isArray(parsed.entries)) {
     for (const legacyEntry of parsed.entries) {
@@ -193,16 +218,33 @@ function readBudgets() {
   return Object.fromEntries(rows.map((row) => [row.category, row.amount]));
 }
 
-function writeBudgets(budgets) {
+function readFootwearBrandBudgets() {
+  const rows = db.prepare("SELECT brand, amount FROM footwear_brand_budgets ORDER BY rowid").all();
+  const saved = Object.fromEntries(rows.map((row) => [row.brand, row.amount]));
+  return {
+    ...defaultFootwearBrandBudgets,
+    ...saved
+  };
+}
+
+function writeBudgets(budgets, footwearBrandBudgets) {
   const insert = db.prepare(`
     INSERT INTO budgets (category, amount) VALUES (?, ?)
     ON CONFLICT(category) DO UPDATE SET amount = excluded.amount
   `);
+  const insertBrandBudget = db.prepare(`
+    INSERT INTO footwear_brand_budgets (brand, amount) VALUES (?, ?)
+    ON CONFLICT(brand) DO UPDATE SET amount = excluded.amount
+  `);
   db.exec("BEGIN");
   try {
     db.prepare("DELETE FROM budgets").run();
+    db.prepare("DELETE FROM footwear_brand_budgets").run();
     for (const [category, amount] of Object.entries(budgets)) {
       insert.run(category, amount);
+    }
+    for (const [brand, amount] of Object.entries(footwearBrandBudgets)) {
+      insertBrandBudget.run(brand, amount);
     }
     db.exec("COMMIT");
   } catch (error) {
@@ -218,9 +260,9 @@ function readEntries() {
 function insertEntry(entry) {
   db.prepare(`
     INSERT INTO entries (
-      id, owner_user_id, owner_name, po_number, po_date, category,
+      id, owner_user_id, owner_name, po_number, po_date, category, brand,
       spend_type, vendor, record_type, purpose, amount, status, notes, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     entry.id,
     entry.ownerUserId,
@@ -228,6 +270,7 @@ function insertEntry(entry) {
     entry.poNumber,
     entry.poDate,
     entry.category,
+    entry.brand,
     entry.spendType,
     entry.vendor,
     entry.recordType,
@@ -244,12 +287,20 @@ function resetAppData() {
     INSERT INTO budgets (category, amount) VALUES (?, ?)
     ON CONFLICT(category) DO UPDATE SET amount = excluded.amount
   `);
+  const insertBrandBudget = db.prepare(`
+    INSERT INTO footwear_brand_budgets (brand, amount) VALUES (?, ?)
+    ON CONFLICT(brand) DO UPDATE SET amount = excluded.amount
+  `);
   db.exec("BEGIN");
   try {
     db.prepare("DELETE FROM entries").run();
     db.prepare("DELETE FROM budgets").run();
+    db.prepare("DELETE FROM footwear_brand_budgets").run();
     for (const [category, amount] of Object.entries(defaultBudgets)) {
       insert.run(category, amount);
+    }
+    for (const [brand, amount] of Object.entries(defaultFootwearBrandBudgets)) {
+      insertBrandBudget.run(brand, amount);
     }
     db.exec("COMMIT");
   } catch (error) {
@@ -267,16 +318,25 @@ function sanitizeBudgets(input) {
   );
 }
 
+function sanitizeFootwearBrandBudgets(input) {
+  const merged = { ...defaultFootwearBrandBudgets, ...(input || {}) };
+  return Object.fromEntries(
+    Object.entries(defaultFootwearBrandBudgets).map(([brand]) => [brand, clampMoney(merged[brand])])
+  );
+}
+
 function sanitizeEntry(input, sessionUser) {
   const recordType = sanitizeRecordType(input.recordType);
   const ownerName = sanitizeText(input.ownerName || input.owner);
+  const category = sanitizeCategory(input.category);
   return {
     id: typeof input.id === "string" ? input.id : randomUUID(),
     ownerUserId: null,
     ownerName: ownerName || "Unknown",
     poNumber: sanitizeText(input.poNumber),
     poDate: sanitizeDate(input.poDate),
-    category: sanitizeCategory(input.category),
+    category,
+    brand: sanitizeBrand(input.brand, category),
     spendType: sanitizeText(input.spendType),
     vendor: sanitizeText(input.vendor),
     recordType,
@@ -296,6 +356,7 @@ function mapEntryRow(row) {
     poNumber: row.po_number,
     poDate: row.po_date,
     category: row.category,
+    brand: row.brand,
     spendType: row.spend_type,
     vendor: row.vendor,
     recordType: row.record_type,
@@ -335,6 +396,11 @@ function sanitizeCategory(value) {
   const text = String(value || "");
   if (text === "Massage Oils") return "Massagers";
   return Object.hasOwn(defaultBudgets, text) ? text : Object.keys(defaultBudgets)[0];
+}
+
+function sanitizeBrand(value, category) {
+  if (category !== "Footwear") return "";
+  return Object.hasOwn(defaultFootwearBrandBudgets, value) ? value : "Cult";
 }
 
 function sanitizeStatus(value) {
