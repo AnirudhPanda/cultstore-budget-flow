@@ -44,7 +44,6 @@ const refs = {
   quarterTableBody: document.getElementById("quarterTableBody"),
   budgetItemTemplate: document.getElementById("budgetItemTemplate"),
   clearForm: document.getElementById("clearForm"),
-  resetBudgets: document.getElementById("resetBudgets"),
   jumpToForm: document.getElementById("jumpToForm"),
   resetApp: document.getElementById("resetApp"),
   syncStatus: document.getElementById("syncStatus"),
@@ -76,16 +75,6 @@ function bindEvents() {
     updateAmountLabel();
     updateBrandField();
     setFormMessage("");
-  });
-  refs.resetBudgets.addEventListener("click", async () => {
-    await apiFetch("/api/budgets", {
-      method: "PUT",
-      body: JSON.stringify({
-        budgets: defaultBudgets,
-        footwearBrandBudgets: defaultFootwearBrandBudgets
-      })
-    });
-    await refreshState("Budgets reset");
   });
   refs.jumpToForm.addEventListener("click", () => {
     document.getElementById("poFormPanel").scrollIntoView({ behavior: "smooth", block: "start" });
