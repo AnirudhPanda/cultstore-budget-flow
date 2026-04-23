@@ -19,12 +19,22 @@ Why:
   - Set this to the mounted persistent storage path.
   - Example for Railway: `/data`
   - Example for Render mounted disk: `/data`
+- `R2_ACCOUNT_ID`
+  - Your Cloudflare account ID for the R2 bucket.
+- `R2_BUCKET`
+  - The bucket name where PO PDFs will be stored.
+- `R2_ACCESS_KEY_ID`
+  - R2 access key with bucket read/write access.
+- `R2_SECRET_ACCESS_KEY`
+  - Matching R2 secret key.
 
 ## Health check
 
 Use:
 
 `/api/health`
+
+This endpoint also shows whether PDF upload storage is configured.
 
 ## Railway
 

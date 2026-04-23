@@ -19,6 +19,7 @@ const state = {
 
 const refs = {
   owner: document.getElementById("owner"),
+  attachment: document.getElementById("attachment"),
   budgetList: document.getElementById("budgetList"),
   spendBars: document.getElementById("spendBars"),
   categorySelect: document.getElementById("category"),
@@ -50,8 +51,10 @@ const refs = {
   formMessage: document.getElementById("formMessage"),
   downloadSheet: document.getElementById("downloadSheet"),
   recordType: document.getElementById("recordType"),
-  amountLabel: document.getElementById("amountLabel")
+  amountLabel: document.getElementById("amountLabel"),
+  rowPdfInput: document.getElementById("rowPdfInput")
 };
+let pendingRowPdfEntryId = null;
 
 init();
 
@@ -93,6 +96,7 @@ function bindEvents() {
   refs.downloadSheet.addEventListener("click", downloadSheet);
   refs.recordType.addEventListener("change", updateAmountLabel);
   refs.categorySelect.addEventListener("change", updateBrandField);
+  refs.rowPdfInput.addEventListener("change", handleRowPdfSelection);
 }
 
 function setDefaultDate() {
@@ -177,14 +181,19 @@ async function handleSubmit(event) {
   submitButton.textContent = "Saving...";
 
   try {
-    setFormMessage("Saving entry...", "success");
-    await apiFetch("/api/entries", {
+    const attachmentFile = refs.attachment.files?.[0] || null;
+    setFormMessage(attachmentFile ? "Saving entry and uploading PDF..." : "Saving entry...", "success");
+    const createdEntry = await apiFetch("/api/entries", {
       method: "POST",
       body: JSON.stringify(entry)
     });
+
+    if (attachmentFile) {
+      await uploadPdfForEntry(createdEntry.id, attachmentFile);
+    }
   } catch (error) {
     console.error(error);
-    setFormMessage("Could not save the entry. Please try again.", "error");
+    setFormMessage(error.message || "Could not save the entry. Please try again.", "error");
     setSyncStatus("Save failed", "error");
     submitButton.disabled = false;
     submitButton.textContent = "Save PO";
@@ -402,7 +411,8 @@ function renderTable() {
         entry.spendType,
         entry.vendor,
         entry.purpose,
-        entry.notes
+        entry.notes,
+        entry.attachmentName
       ]
         .join(" ")
         .toLowerCase()
@@ -417,7 +427,7 @@ function renderTable() {
   if (filtered.length === 0) {
     refs.poTableBody.innerHTML = `
       <tr>
-        <td colspan="12" class="empty-state">No purchase orders match the current filters.</td>
+        <td colspan="13" class="empty-state">No purchase orders match the current filters.</td>
       </tr>
     `;
     return;
@@ -440,6 +450,7 @@ function renderTable() {
             ${entry.notes ? `<div class="notes">${escapeHtml(entry.notes)}</div>` : ""}
           </td>
           <td>${formatCurrency(entry.amount)}</td>
+          <td>${renderAttachmentCell(entry)}</td>
           <td>
             <select class="table-status-select" data-id="${escapeHtml(entry.id)}" data-status="${escapeHtml(entry.status)}">
               ${renderStatusOptions(entry.status)}
@@ -467,6 +478,14 @@ function renderTable() {
     button.addEventListener("click", async () => {
       await apiFetch(`/api/entries/${encodeURIComponent(button.dataset.id)}`, { method: "DELETE" });
       await refreshState("Entry deleted");
+    });
+  });
+
+  refs.poTableBody.querySelectorAll(".attachment-trigger").forEach((button) => {
+    button.addEventListener("click", () => {
+      pendingRowPdfEntryId = button.dataset.id;
+      refs.rowPdfInput.value = "";
+      refs.rowPdfInput.click();
     });
   });
 }
@@ -537,6 +556,19 @@ function renderStatusOptions(selectedStatus) {
     .join("");
 }
 
+function renderAttachmentCell(entry) {
+  if (entry.attachmentName) {
+    return `
+      <div class="attachment-cell">
+        <a class="attachment-link" href="/api/entries/${encodeURIComponent(entry.id)}/attachment" target="_blank" rel="noreferrer">View PDF</a>
+        <button class="inline-action attachment-trigger" type="button" data-id="${escapeHtml(entry.id)}">Replace</button>
+      </div>
+    `;
+  }
+
+  return `<button class="inline-action attachment-trigger" type="button" data-id="${escapeHtml(entry.id)}">Upload PDF</button>`;
+}
+
 function downloadSheet() {
   if (state.entries.length === 0) {
     setSyncStatus("No transaction data to download", "error");
@@ -554,6 +586,7 @@ function downloadSheet() {
     "Transaction Basis",
     "Purpose",
     "Amount",
+    "Attachment Name",
     "Status",
     "Notes",
     "Created At"
@@ -570,6 +603,7 @@ function downloadSheet() {
     entry.recordType,
     entry.purpose,
     entry.amount,
+    entry.attachmentName,
     entry.status,
     entry.notes,
     entry.createdAt || ""
@@ -610,6 +644,40 @@ async function apiFetch(url, options = {}) {
   return payload;
 }
 
+async function uploadPdfForEntry(entryId, file) {
+  validatePdfFile(file);
+  const buffer = await file.arrayBuffer();
+  const base64Data = arrayBufferToBase64(buffer);
+
+  await apiFetch(`/api/entries/${encodeURIComponent(entryId)}/attachment`, {
+    method: "POST",
+    body: JSON.stringify({
+      fileName: file.name,
+      contentType: file.type || "application/pdf",
+      base64Data
+    })
+  });
+}
+
+async function handleRowPdfSelection(event) {
+  const file = event.target.files?.[0];
+  const entryId = pendingRowPdfEntryId;
+  pendingRowPdfEntryId = null;
+  event.target.value = "";
+
+  if (!file || !entryId) return;
+
+  try {
+    setSyncStatus("Uploading PDF...", "pending");
+    await uploadPdfForEntry(entryId, file);
+    await refreshState("PDF uploaded");
+  } catch (error) {
+    console.error(error);
+    setSyncStatus("PDF upload failed", "error");
+    setFormMessage(error.message || "Could not upload the PDF.", "error");
+  }
+}
+
 function setSyncStatus(text, tone) {
   refs.syncStatus.textContent = text;
   refs.syncStatus.dataset.tone = tone;
@@ -647,6 +715,29 @@ function formatCurrency(value) {
     currency: "INR",
     maximumFractionDigits: 0
   }).format(value || 0);
+}
+
+function validatePdfFile(file) {
+  if (!file) return;
+  const normalizedName = String(file.name || "").toLowerCase();
+  const isPdf = file.type === "application/pdf" || normalizedName.endsWith(".pdf");
+  if (!isPdf) {
+    throw new Error("Please upload a PDF file only.");
+  }
+  const maxBytes = 10 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    throw new Error("Please keep the PDF under 10 MB.");
+  }
+}
+
+function arrayBufferToBase64(buffer) {
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
 }
 
 function formatDate(value) {

@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 
@@ -17,6 +18,12 @@ const dataDir = configuredDataDir
 const jsonDataPath = path.join(dataDir, "budget-flow.json");
 const dbPath = path.join(dataDir, "budget-flow.db");
 const port = Number(process.env.PORT) || 3000;
+const r2Config = {
+  accountId: process.env.R2_ACCOUNT_ID?.trim() || "",
+  bucket: process.env.R2_BUCKET?.trim() || "",
+  accessKeyId: process.env.R2_ACCESS_KEY_ID?.trim() || "",
+  secretAccessKey: process.env.R2_SECRET_ACCESS_KEY?.trim() || ""
+};
 
 const defaultBudgets = {
   Apparel: 1200000,
@@ -62,6 +69,11 @@ async function handleApi(request, response, url) {
       storage: {
         dataDir,
         dbPath
+      },
+      uploads: {
+        provider: "r2",
+        configured: isR2Configured(),
+        bucket: r2Config.bucket || null
       }
     });
     return;
@@ -105,19 +117,88 @@ async function handleApi(request, response, url) {
 
     const nextStatus = sanitizeStatus(body.status);
     db.prepare("UPDATE entries SET status = ? WHERE id = ?").run(nextStatus, id);
-    respondJson(response, 200, db.prepare("SELECT * FROM entries WHERE id = ?").get(id));
+    respondJson(response, 200, mapEntryRow(db.prepare("SELECT * FROM entries WHERE id = ?").get(id)));
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname.startsWith("/api/entries/") && url.pathname.endsWith("/attachment")) {
+    const id = decodeURIComponent(url.pathname.replace("/api/entries/", "").replace("/attachment", ""));
+    const entry = db.prepare("SELECT id, attachment_key, attachment_name FROM entries WHERE id = ?").get(id);
+
+    if (!entry || !entry.attachment_key) {
+      respondJson(response, 404, { error: "Attachment not found" });
+      return;
+    }
+
+    if (!isR2Configured()) {
+      respondJson(response, 503, { error: "R2 storage is not configured yet" });
+      return;
+    }
+
+    const object = await getObjectFromR2(entry.attachment_key);
+    const dispositionType = url.searchParams.get("download") === "1" ? "attachment" : "inline";
+    response.writeHead(200, {
+      "Content-Type": object.contentType || "application/pdf",
+      "Content-Disposition": `${dispositionType}; filename="${encodeContentDispositionFilename(entry.attachment_name || "attachment.pdf")}"`
+    });
+
+    if (object.body) {
+      Readable.fromWeb(object.body).pipe(response);
+      return;
+    }
+
+    response.end();
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname.startsWith("/api/entries/") && url.pathname.endsWith("/attachment")) {
+    const id = decodeURIComponent(url.pathname.replace("/api/entries/", "").replace("/attachment", ""));
+    const entry = db.prepare("SELECT id, attachment_key FROM entries WHERE id = ?").get(id);
+
+    if (!entry) {
+      respondJson(response, 404, { error: "Entry not found" });
+      return;
+    }
+
+    if (!isR2Configured()) {
+      respondJson(response, 503, { error: "R2 storage is not configured yet" });
+      return;
+    }
+
+    const body = await readJsonBody(request);
+    const attachment = sanitizeAttachmentUpload(body);
+    const attachmentKey = buildAttachmentKey(id, attachment.fileName);
+
+    await putObjectInR2(attachmentKey, attachment.buffer, attachment.contentType);
+
+    if (entry.attachment_key && entry.attachment_key !== attachmentKey) {
+      await deleteObjectFromR2(entry.attachment_key).catch(() => {});
+    }
+
+    const uploadedAt = new Date().toISOString();
+    db.prepare(`
+      UPDATE entries
+      SET attachment_key = ?, attachment_name = ?, attachment_uploaded_at = ?
+      WHERE id = ?
+    `).run(attachmentKey, attachment.fileName, uploadedAt, id);
+
+    respondJson(response, 200, mapEntryRow(db.prepare("SELECT * FROM entries WHERE id = ?").get(id)));
     return;
   }
 
   if (request.method === "DELETE" && url.pathname.startsWith("/api/entries/")) {
     const id = decodeURIComponent(url.pathname.replace("/api/entries/", ""));
+    const existingEntry = db.prepare("SELECT attachment_key FROM entries WHERE id = ?").get(id);
     db.prepare("DELETE FROM entries WHERE id = ?").run(id);
+    if (existingEntry?.attachment_key && isR2Configured()) {
+      await deleteObjectFromR2(existingEntry.attachment_key).catch(() => {});
+    }
     respondJson(response, 200, { ok: true });
     return;
   }
 
   if (request.method === "POST" && url.pathname === "/api/reset") {
-    resetAppData();
+    await resetAppData();
     respondJson(response, 200, { budgets: readBudgets(), entries: readEntries() });
     return;
   }
@@ -169,6 +250,9 @@ function initializeDatabase() {
       amount INTEGER NOT NULL,
       status TEXT NOT NULL,
       notes TEXT NOT NULL,
+      attachment_key TEXT NOT NULL,
+      attachment_name TEXT NOT NULL,
+      attachment_uploaded_at TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
   `);
@@ -177,6 +261,18 @@ function initializeDatabase() {
   const hasBrandColumn = entryColumns.some((column) => column.name === "brand");
   if (!hasBrandColumn) {
     db.exec(`ALTER TABLE entries ADD COLUMN brand TEXT NOT NULL DEFAULT ''`);
+  }
+  const hasAttachmentKeyColumn = entryColumns.some((column) => column.name === "attachment_key");
+  if (!hasAttachmentKeyColumn) {
+    db.exec(`ALTER TABLE entries ADD COLUMN attachment_key TEXT NOT NULL DEFAULT ''`);
+  }
+  const hasAttachmentNameColumn = entryColumns.some((column) => column.name === "attachment_name");
+  if (!hasAttachmentNameColumn) {
+    db.exec(`ALTER TABLE entries ADD COLUMN attachment_name TEXT NOT NULL DEFAULT ''`);
+  }
+  const hasAttachmentUploadedAtColumn = entryColumns.some((column) => column.name === "attachment_uploaded_at");
+  if (!hasAttachmentUploadedAtColumn) {
+    db.exec(`ALTER TABLE entries ADD COLUMN attachment_uploaded_at TEXT NOT NULL DEFAULT ''`);
   }
 
   if (db.prepare("SELECT COUNT(*) AS count FROM budgets").get().count === 0) {
@@ -261,8 +357,9 @@ function insertEntry(entry) {
   db.prepare(`
     INSERT INTO entries (
       id, owner_user_id, owner_name, po_number, po_date, category, brand,
-      spend_type, vendor, record_type, purpose, amount, status, notes, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      spend_type, vendor, record_type, purpose, amount, status, notes,
+      attachment_key, attachment_name, attachment_uploaded_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     entry.id,
     entry.ownerUserId,
@@ -278,11 +375,14 @@ function insertEntry(entry) {
     entry.amount,
     entry.status,
     entry.notes,
+    entry.attachmentKey,
+    entry.attachmentName,
+    entry.attachmentUploadedAt,
     entry.createdAt
   );
 }
 
-function resetAppData() {
+async function resetAppData() {
   const insert = db.prepare(`
     INSERT INTO budgets (category, amount) VALUES (?, ?)
     ON CONFLICT(category) DO UPDATE SET amount = excluded.amount
@@ -291,6 +391,9 @@ function resetAppData() {
     INSERT INTO footwear_brand_budgets (brand, amount) VALUES (?, ?)
     ON CONFLICT(brand) DO UPDATE SET amount = excluded.amount
   `);
+  const attachmentKeys = isR2Configured()
+    ? db.prepare("SELECT attachment_key FROM entries WHERE attachment_key != ''").all().map((row) => row.attachment_key)
+    : [];
   db.exec("BEGIN");
   try {
     db.prepare("DELETE FROM entries").run();
@@ -306,6 +409,10 @@ function resetAppData() {
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
+  }
+
+  if (attachmentKeys.length > 0) {
+    await Promise.all(attachmentKeys.map((key) => deleteObjectFromR2(key).catch(() => {})));
   }
 }
 
@@ -344,6 +451,9 @@ function sanitizeEntry(input, sessionUser) {
     amount: sanitizeAmount(input),
     status: sanitizeStatus(input.status),
     notes: sanitizeText(input.notes),
+    attachmentKey: sanitizeText(input.attachmentKey),
+    attachmentName: sanitizeAttachmentName(input.attachmentName),
+    attachmentUploadedAt: typeof input.attachmentUploadedAt === "string" ? input.attachmentUploadedAt : "",
     createdAt: typeof input.createdAt === "string" ? input.createdAt : new Date().toISOString()
   };
 }
@@ -364,6 +474,9 @@ function mapEntryRow(row) {
     amount: row.amount,
     status: row.status,
     notes: row.notes,
+    attachmentKey: row.attachment_key,
+    attachmentName: row.attachment_name,
+    attachmentUploadedAt: row.attachment_uploaded_at,
     createdAt: row.created_at
   };
 }
@@ -423,10 +536,174 @@ function sanitizeAmount(input) {
   return poAmount || invoiceAmount;
 }
 
+function sanitizeAttachmentName(value) {
+  const fileName = String(value || "").trim().replace(/[^\w.\- ]+/g, "_");
+  return fileName.slice(0, 160);
+}
+
+function sanitizeAttachmentUpload(input) {
+  const fileName = sanitizeAttachmentName(input.fileName);
+  const contentType = String(input.contentType || "").trim().toLowerCase();
+  if (!fileName || !fileName.toLowerCase().endsWith(".pdf")) {
+    throw new Error("Please upload a PDF file only.");
+  }
+  if (contentType && contentType !== "application/pdf") {
+    throw new Error("Please upload a PDF file only.");
+  }
+  const base64Data = String(input.base64Data || "");
+  if (!base64Data) {
+    throw new Error("Missing PDF file data.");
+  }
+  const buffer = Buffer.from(base64Data, "base64");
+  const maxBytes = 10 * 1024 * 1024;
+  if (buffer.length === 0 || buffer.length > maxBytes) {
+    throw new Error("Please keep the PDF under 10 MB.");
+  }
+  return {
+    fileName,
+    contentType: "application/pdf",
+    buffer
+  };
+}
+
+function buildAttachmentKey(entryId, fileName) {
+  const safeFileName = sanitizeAttachmentName(fileName || "attachment.pdf") || "attachment.pdf";
+  return `po-attachments/${entryId}/${Date.now()}-${safeFileName}`;
+}
+
 function clampMoney(value) {
   const amount = Number(value);
   if (!Number.isFinite(amount) || amount < 0) return 0;
   return Math.round(amount);
+}
+
+function isR2Configured() {
+  return Boolean(
+    r2Config.accountId && r2Config.bucket && r2Config.accessKeyId && r2Config.secretAccessKey
+  );
+}
+
+function getR2Endpoint() {
+  return `https://${r2Config.accountId}.r2.cloudflarestorage.com`;
+}
+
+async function putObjectInR2(key, buffer, contentType) {
+  const response = await signedR2Request("PUT", key, {
+    body: buffer,
+    contentType
+  });
+  if (!response.ok) {
+    throw new Error(`Could not upload PDF to storage (${response.status}).`);
+  }
+}
+
+async function getObjectFromR2(key) {
+  const response = await signedR2Request("GET", key);
+  if (!response.ok) {
+    throw new Error(`Could not fetch PDF from storage (${response.status}).`);
+  }
+
+  return {
+    body: response.body,
+    contentType: response.headers.get("content-type")
+  };
+}
+
+async function deleteObjectFromR2(key) {
+  const response = await signedR2Request("DELETE", key);
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Could not delete PDF from storage (${response.status}).`);
+  }
+}
+
+async function signedR2Request(method, key, options = {}) {
+  if (!isR2Configured()) {
+    throw new Error("R2 storage is not configured yet.");
+  }
+
+  const now = new Date();
+  const amzDate = toAmzDate(now);
+  const dateStamp = amzDate.slice(0, 8);
+  const body = options.body ? Buffer.from(options.body) : Buffer.alloc(0);
+  const payloadHash = sha256Hex(body);
+  const host = `${r2Config.accountId}.r2.cloudflarestorage.com`;
+  const canonicalUri = `/${encodeURIComponent(r2Config.bucket)}/${encodeR2Key(key)}`;
+  const canonicalHeaders = [
+    `host:${host}`,
+    `x-amz-content-sha256:${payloadHash}`,
+    `x-amz-date:${amzDate}`
+  ].join("\n") + "\n";
+  const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
+  const canonicalRequest = [
+    method,
+    canonicalUri,
+    "",
+    canonicalHeaders,
+    signedHeaders,
+    payloadHash
+  ].join("\n");
+  const credentialScope = `${dateStamp}/auto/s3/aws4_request`;
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    sha256Hex(canonicalRequest)
+  ].join("\n");
+  const signingKey = getSignatureKey(r2Config.secretAccessKey, dateStamp, "auto", "s3");
+  const signature = hmacHex(signingKey, stringToSign);
+  const authorization =
+    `AWS4-HMAC-SHA256 Credential=${r2Config.accessKeyId}/${credentialScope}, ` +
+    `SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  const headers = {
+    Authorization: authorization,
+    "x-amz-content-sha256": payloadHash,
+    "x-amz-date": amzDate
+  };
+
+  if (options.contentType) {
+    headers["Content-Type"] = options.contentType;
+  }
+
+  return fetch(`${getR2Endpoint()}${canonicalUri}`, {
+    method,
+    headers,
+    body: ["GET", "HEAD"].includes(method) ? undefined : body
+  });
+}
+
+function encodeR2Key(key) {
+  return String(key || "")
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+function toAmzDate(date) {
+  return date.toISOString().replace(/[:-]|\.\d{3}/g, "");
+}
+
+function sha256Hex(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function hmac(key, value) {
+  return createHmac("sha256", key).update(value).digest();
+}
+
+function hmacHex(key, value) {
+  return createHmac("sha256", key).update(value).digest("hex");
+}
+
+function getSignatureKey(secretKey, dateStamp, regionName, serviceName) {
+  const kDate = hmac(`AWS4${secretKey}`, dateStamp);
+  const kRegion = hmac(kDate, regionName);
+  const kService = hmac(kRegion, serviceName);
+  return hmac(kService, "aws4_request");
+}
+
+function encodeContentDispositionFilename(value) {
+  return String(value || "attachment.pdf").replace(/"/g, "");
 }
 
 function getContentType(filePath) {
