@@ -115,8 +115,17 @@ async function handleApi(request, response, url) {
       return;
     }
 
-    const nextStatus = sanitizeStatus(body.status);
-    db.prepare("UPDATE entries SET status = ? WHERE id = ?").run(nextStatus, id);
+    const nextStatus = typeof body.status === "string" ? sanitizeStatus(body.status) : null;
+    const nextPoNumber = Object.hasOwn(body, "poNumber") ? sanitizeText(body.poNumber) : null;
+
+    if (nextStatus !== null) {
+      db.prepare("UPDATE entries SET status = ? WHERE id = ?").run(nextStatus, id);
+    }
+
+    if (nextPoNumber !== null) {
+      db.prepare("UPDATE entries SET po_number = ? WHERE id = ?").run(nextPoNumber, id);
+    }
+
     respondJson(response, 200, mapEntryRow(db.prepare("SELECT * FROM entries WHERE id = ?").get(id)));
     return;
   }

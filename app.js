@@ -81,7 +81,7 @@ function bindEvents() {
   });
   refs.jumpToForm.addEventListener("click", () => {
     document.getElementById("poFormPanel").scrollIntoView({ behavior: "smooth", block: "start" });
-    document.getElementById("poNumber").focus();
+    document.getElementById("owner").focus();
   });
   refs.resetApp.addEventListener("click", async () => {
     const confirmed = window.confirm("Reset all budgets and purchase orders for this shared app?");
@@ -204,7 +204,7 @@ async function handleSubmit(event) {
   setDefaultDate();
   updateAmountLabel();
   updateBrandField();
-  setFormMessage(`Saved ${entry.poNumber || "entry"} successfully.`, "success");
+  setFormMessage(`Saved ${entry.poNumber || "transaction"} successfully.`, "success");
   await refreshState("Entry saved");
   submitButton.disabled = false;
   submitButton.textContent = "Save PO";
@@ -438,7 +438,15 @@ function renderTable() {
       (entry) => `
         <tr>
           <td>${escapeHtml(entry.ownerName || "Unknown")}</td>
-          <td>${escapeHtml(entry.poNumber)}</td>
+          <td>
+            <input
+              class="table-po-input"
+              data-id="${escapeHtml(entry.id)}"
+              type="text"
+              value="${escapeHtml(entry.poNumber)}"
+              placeholder="Add later"
+            />
+          </td>
           <td>${formatDate(entry.poDate)}</td>
           <td>${escapeHtml(entry.category)}</td>
           <td>${entry.brand ? `<span class="brand-pill">${escapeHtml(entry.brand)}</span>` : "—"}</td>
@@ -471,6 +479,37 @@ function renderTable() {
         body: JSON.stringify({ status: nextStatus })
       });
       await refreshState(`Status updated to ${nextStatus}`);
+    });
+  });
+
+  refs.poTableBody.querySelectorAll(".table-po-input").forEach((input) => {
+    let initialValue = input.value;
+    const savePoNumber = async () => {
+      const nextValue = input.value.trim();
+      if (nextValue === initialValue) return;
+      input.disabled = true;
+      try {
+        await apiFetch(`/api/entries/${encodeURIComponent(input.dataset.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ poNumber: nextValue })
+        });
+        initialValue = nextValue;
+        await refreshState(nextValue ? "PO number updated" : "PO number cleared");
+      } catch (error) {
+        console.error(error);
+        setSyncStatus("PO update failed", "error");
+        input.value = initialValue;
+      } finally {
+        input.disabled = false;
+      }
+    };
+
+    input.addEventListener("blur", savePoNumber);
+    input.addEventListener("keydown", async (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        input.blur();
+      }
     });
   });
 
