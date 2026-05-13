@@ -49,18 +49,18 @@ select:focus-visible {
 }
 
 .page-shell {
-  width: min(1320px, calc(100% - 32px));
-  max-width: calc(100% - 32px);
+  width: min(1480px, calc(100% - 20px));
+  max-width: calc(100% - 20px);
   margin: 0 auto;
-  padding: 32px 0 56px;
+  padding: 24px 0 48px;
 }
 
 .hero {
   display: grid;
-  grid-template-columns: 1.3fr 0.8fr;
-  gap: 24px;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.85fr);
+  gap: 18px;
   align-items: stretch;
-  margin-bottom: 28px;
+  margin-bottom: 22px;
 }
 
 .hero-copy,
@@ -291,13 +291,13 @@ label {
 
 .dashboard {
   display: grid;
-  gap: 24px;
+  gap: 18px;
 }
 
 .summary-grid,
 .two-column-grid {
   display: grid;
-  gap: 20px;
+  gap: 16px;
 }
 
 .hero > *,
@@ -313,15 +313,15 @@ label {
 }
 
 .two-column-grid {
-  grid-template-columns: 1.1fr 0.9fr;
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
 }
 
 .quarter-layout {
-  grid-template-columns: 0.82fr 1.18fr;
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
 }
 
 .intelligence-layout {
-  grid-template-columns: 0.82fr 1.18fr;
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
 }
 
 .form-layout {
@@ -330,7 +330,7 @@ label {
 
 .panel {
   border-radius: 26px;
-  padding: 24px;
+  padding: 22px;
   position: relative;
 }
 
