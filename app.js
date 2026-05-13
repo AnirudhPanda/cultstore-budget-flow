@@ -10,6 +10,27 @@ const defaultFootwearBrandBudgets = {
   Cult: 500000,
   Avant: 500000
 };
+const partnerTypeOptions = [
+  "Agency",
+  "Production House",
+  "Influencer / Talent",
+  "Media Vendor",
+  "Event Agency",
+  "Sponsorship Partner",
+  "Research Vendor",
+  "Misc Vendor"
+];
+const spendHeadOptions = ["Media", "Production", "Influencers", "Events", "Sponsorships", "Research", "Misc"];
+const partnerTypeToSpendHead = {
+  Agency: "Media",
+  "Production House": "Production",
+  "Influencer / Talent": "Influencers",
+  "Media Vendor": "Media",
+  "Event Agency": "Events",
+  "Sponsorship Partner": "Sponsorships",
+  "Research Vendor": "Research",
+  "Misc Vendor": "Misc"
+};
 
 const state = {
   budgets: { ...defaultBudgets },
@@ -22,9 +43,12 @@ const refs = {
   attachment: document.getElementById("attachment"),
   budgetList: document.getElementById("budgetList"),
   spendBars: document.getElementById("spendBars"),
+  spendHeadBars: document.getElementById("spendHeadBars"),
   categorySelect: document.getElementById("category"),
   brandField: document.getElementById("brandField"),
   brandSelect: document.getElementById("brand"),
+  partnerType: document.getElementById("partnerType"),
+  spendHead: document.getElementById("spendHead"),
   filterCategory: document.getElementById("filterCategory"),
   poForm: document.getElementById("poForm"),
   poTableBody: document.getElementById("poTableBody"),
@@ -41,8 +65,10 @@ const refs = {
   topCategory: document.getElementById("topCategory"),
   topVendor: document.getElementById("topVendor"),
   topOwner: document.getElementById("topOwner"),
+  topSpendHead: document.getElementById("topSpendHead"),
   quarterGrid: document.getElementById("quarterGrid"),
   quarterTableBody: document.getElementById("quarterTableBody"),
+  spendHeadMatrixBody: document.getElementById("spendHeadMatrixBody"),
   budgetItemTemplate: document.getElementById("budgetItemTemplate"),
   clearForm: document.getElementById("clearForm"),
   jumpToForm: document.getElementById("jumpToForm"),
@@ -62,6 +88,7 @@ async function init() {
   bindEvents();
   setDefaultDate();
   updateAmountLabel();
+  syncSpendHeadFromPartnerType();
   populateCategoryOptions();
   updateBrandField();
   await refreshState();
@@ -77,6 +104,7 @@ function bindEvents() {
     setDefaultDate();
     updateAmountLabel();
     updateBrandField();
+    syncSpendHeadFromPartnerType();
     setFormMessage("");
   });
   refs.jumpToForm.addEventListener("click", () => {
@@ -92,10 +120,12 @@ function bindEvents() {
     setDefaultDate();
     updateAmountLabel();
     updateBrandField();
+    syncSpendHeadFromPartnerType();
   });
   refs.downloadSheet.addEventListener("click", downloadSheet);
   refs.recordType.addEventListener("change", updateAmountLabel);
   refs.categorySelect.addEventListener("change", updateBrandField);
+  refs.partnerType.addEventListener("change", syncSpendHeadFromPartnerType);
   refs.rowPdfInput.addEventListener("change", handleRowPdfSelection);
 }
 
@@ -124,6 +154,8 @@ async function refreshState(message = "Connected") {
           ...entry,
           category: entry.category === "Massage Oils" ? "Massagers" : entry.category,
           brand: normalizeBrand(entry),
+          partnerType: normalizePartnerType(entry),
+          spendHead: normalizeSpendHead(entry),
           ownerName: normalizeOwnerName(entry),
           recordType: normalizeRecordType(entry.recordType),
           amount: normalizeAmount(entry)
@@ -168,7 +200,8 @@ async function handleSubmit(event) {
     poDate: String(formData.get("poDate")),
     category: String(formData.get("category")),
     brand: String(formData.get("brand") || ""),
-    spendType: String(formData.get("spendType")),
+    partnerType: String(formData.get("partnerType")),
+    spendHead: String(formData.get("spendHead")),
     vendor: String(formData.get("vendor")).trim(),
     recordType: String(formData.get("recordType")),
     purpose: String(formData.get("purpose")).trim(),
@@ -196,7 +229,7 @@ async function handleSubmit(event) {
     setFormMessage(error.message || "Could not save the entry. Please try again.", "error");
     setSyncStatus("Save failed", "error");
     submitButton.disabled = false;
-    submitButton.textContent = "Save PO";
+    submitButton.textContent = "SAVE";
     return;
   }
 
@@ -204,10 +237,11 @@ async function handleSubmit(event) {
   setDefaultDate();
   updateAmountLabel();
   updateBrandField();
+  syncSpendHeadFromPartnerType();
   setFormMessage(`Saved ${entry.poNumber || "transaction"} successfully.`, "success");
   await refreshState("Entry saved");
   submitButton.disabled = false;
-  submitButton.textContent = "Save PO";
+  submitButton.textContent = "SAVE";
 }
 
 function render() {
@@ -216,6 +250,7 @@ function render() {
   renderBudgetList();
   renderSpendBars();
   renderQuarterSection();
+  renderSpendHeadSection();
   renderTable();
 }
 
@@ -251,6 +286,7 @@ function renderSummary() {
   refs.topCategory.textContent = getTopLabel(activeEntries, "category");
   refs.topVendor.textContent = getTopLabel(activeEntries, "vendor");
   refs.topOwner.textContent = getTopLabel(activeEntries, "ownerName");
+  refs.topSpendHead.textContent = getTopLabel(activeEntries, "spendHead");
 }
 
 function renderBudgetList() {
@@ -395,6 +431,47 @@ function renderQuarterSection() {
     .join("");
 }
 
+function renderSpendHeadSection() {
+  refs.spendHeadBars.innerHTML = "";
+  const spendBySpendHead = getSpendBySpendHead();
+  const maxSpend = Math.max(...Object.values(spendBySpendHead), 0);
+
+  if (maxSpend === 0) {
+    refs.spendHeadBars.innerHTML = `<div class="empty-state">Log your first transaction to see how the budget splits across spend heads.</div>`;
+  } else {
+    spendHeadOptions.forEach((spendHead) => {
+      const amount = spendBySpendHead[spendHead] || 0;
+      const bar = document.createElement("div");
+      bar.className = "spend-bar";
+      bar.innerHTML = `
+        <div class="spend-bar-head">
+          <strong>${escapeHtml(spendHead)}</strong>
+          <span>${formatCurrency(amount)}</span>
+        </div>
+        <div class="spend-bar-track">
+          <div class="spend-bar-fill" style="width:${maxSpend ? (amount / maxSpend) * 100 : 0}%"></div>
+        </div>
+      `;
+      refs.spendHeadBars.appendChild(bar);
+    });
+  }
+
+  const matrix = getCategorySpendHeadMatrix();
+  refs.spendHeadMatrixBody.innerHTML = Object.keys(state.budgets)
+    .map((category) => {
+      const row = matrix[category] || {};
+      const total = spendHeadOptions.reduce((sum, spendHead) => sum + (row[spendHead] || 0), 0);
+      return `
+        <tr>
+          <td><strong>${escapeHtml(category)}</strong></td>
+          ${spendHeadOptions.map((spendHead) => `<td>${formatCurrency(row[spendHead] || 0)}</td>`).join("")}
+          <td><strong>${formatCurrency(total)}</strong></td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
 function renderTable() {
   const query = refs.searchInput.value.trim().toLowerCase();
   const categoryFilter = refs.filterCategory.value;
@@ -408,7 +485,8 @@ function renderTable() {
         entry.poNumber,
         entry.category,
         entry.brand,
-        entry.spendType,
+        entry.partnerType,
+        entry.spendHead,
         entry.vendor,
         entry.purpose,
         entry.notes,
@@ -427,7 +505,7 @@ function renderTable() {
   if (filtered.length === 0) {
     refs.poTableBody.innerHTML = `
       <tr>
-        <td colspan="13" class="empty-state">No purchase orders match the current filters.</td>
+        <td colspan="14" class="empty-state">No purchase orders match the current filters.</td>
       </tr>
     `;
     return;
@@ -440,6 +518,14 @@ function renderTable() {
           <td>${escapeHtml(entry.ownerName || "Unknown")}</td>
           <td>
             <input
+              class="table-date-input"
+              data-id="${escapeHtml(entry.id)}"
+              type="date"
+              value="${escapeHtml(entry.poDate)}"
+            />
+          </td>
+          <td>
+            <input
               class="table-po-input"
               data-id="${escapeHtml(entry.id)}"
               type="text"
@@ -447,11 +533,11 @@ function renderTable() {
               placeholder="Add later"
             />
           </td>
-          <td>${formatDate(entry.poDate)}</td>
           <td>${escapeHtml(entry.category)}</td>
           <td>${entry.brand ? `<span class="brand-pill">${escapeHtml(entry.brand)}</span>` : "—"}</td>
-          <td>${escapeHtml(entry.spendType)}</td>
+          <td>${escapeHtml(entry.partnerType)}</td>
           <td>${escapeHtml(entry.vendor)}</td>
+          <td><span class="brand-pill spend-head-pill">${escapeHtml(entry.spendHead)}</span></td>
           <td><span class="basis-pill" data-basis="${escapeHtml(entry.recordType)}">${escapeHtml(entry.recordType)}</span></td>
           <td>
             <strong>${escapeHtml(entry.purpose)}</strong>
@@ -513,6 +599,32 @@ function renderTable() {
     });
   });
 
+  refs.poTableBody.querySelectorAll(".table-date-input").forEach((input) => {
+    let initialValue = input.value;
+    const savePoDate = async () => {
+      const nextValue = input.value;
+      if (nextValue === initialValue || !nextValue) return;
+      input.disabled = true;
+      try {
+        await apiFetch(`/api/entries/${encodeURIComponent(input.dataset.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ poDate: nextValue })
+        });
+        initialValue = nextValue;
+        await refreshState("Date updated");
+      } catch (error) {
+        console.error(error);
+        setSyncStatus("Date update failed", "error");
+        input.value = initialValue;
+      } finally {
+        input.disabled = false;
+      }
+    };
+
+    input.addEventListener("change", savePoDate);
+    input.addEventListener("blur", savePoDate);
+  });
+
   refs.poTableBody.querySelectorAll(".delete-btn").forEach((button) => {
     button.addEventListener("click", async () => {
       await apiFetch(`/api/entries/${encodeURIComponent(button.dataset.id)}`, { method: "DELETE" });
@@ -543,6 +655,29 @@ function getSpendByFootwearBrand() {
     acc[entry.brand] = (acc[entry.brand] || 0) + entry.amount;
     return acc;
   }, {});
+}
+
+function getSpendBySpendHead() {
+  return state.entries.reduce((acc, entry) => {
+    if (entry.status === "Cancelled") return acc;
+    acc[entry.spendHead] = (acc[entry.spendHead] || 0) + entry.amount;
+    return acc;
+  }, Object.fromEntries(spendHeadOptions.map((spendHead) => [spendHead, 0])));
+}
+
+function getCategorySpendHeadMatrix() {
+  const base = Object.fromEntries(
+    Object.keys(state.budgets).map((category) => [
+      category,
+      Object.fromEntries(spendHeadOptions.map((spendHead) => [spendHead, 0]))
+    ])
+  );
+
+  return state.entries.reduce((acc, entry) => {
+    if (entry.status === "Cancelled") return acc;
+    acc[entry.category][entry.spendHead] = (acc[entry.category][entry.spendHead] || 0) + entry.amount;
+    return acc;
+  }, base);
 }
 
 function getQuarterTotals() {
@@ -620,8 +755,9 @@ function downloadSheet() {
     "Date",
     "Category",
     "Brand",
-    "Spend Type",
+    "Partner Type",
     "Agency or Vendor",
+    "Spend Head",
     "Transaction Basis",
     "Purpose",
     "Amount",
@@ -637,8 +773,9 @@ function downloadSheet() {
     entry.poDate,
     entry.category,
     entry.brand,
-    entry.spendType,
+    entry.partnerType,
     entry.vendor,
+    entry.spendHead,
     entry.recordType,
     entry.purpose,
     entry.amount,
@@ -732,7 +869,7 @@ function setFormMessage(text, tone = "") {
 }
 
 function updateAmountLabel() {
-  refs.amountLabel.textContent = refs.recordType.value === "Invoice" ? "Invoice amount" : "PO amount";
+  refs.amountLabel.textContent = "Amount";
 }
 
 function updateBrandField() {
@@ -746,6 +883,10 @@ function updateBrandField() {
   } else {
     refs.brandSelect.value = "Cult";
   }
+}
+
+function syncSpendHeadFromPartnerType() {
+  refs.spendHead.value = getSpendHeadForPartnerType(refs.partnerType.value);
 }
 
 function formatCurrency(value) {
@@ -815,6 +956,36 @@ function normalizeOwnerName(entry) {
 function normalizeBrand(entry) {
   if (entry.category !== "Footwear") return "";
   return Object.hasOwn(defaultFootwearBrandBudgets, entry.brand) ? entry.brand : "Cult";
+}
+
+function normalizePartnerType(entry) {
+  const rawValue = String(entry.partnerType || entry.spendType || "").trim();
+  if (partnerTypeOptions.includes(rawValue)) return rawValue;
+  return legacySpendTypeToPartnerType(rawValue);
+}
+
+function normalizeSpendHead(entry) {
+  const rawValue = String(entry.spendHead || "").trim();
+  if (spendHeadOptions.includes(rawValue)) return rawValue;
+  return getSpendHeadForPartnerType(normalizePartnerType(entry));
+}
+
+function legacySpendTypeToPartnerType(value) {
+  const mapping = {
+    Influencer: "Influencer / Talent",
+    Event: "Event Agency",
+    Partnership: "Sponsorship Partner",
+    "Social Media": "Media Vendor",
+    Production: "Production House",
+    "Agency Retainer": "Agency",
+    Travel: "Misc Vendor",
+    Other: "Misc Vendor"
+  };
+  return mapping[value] || "Misc Vendor";
+}
+
+function getSpendHeadForPartnerType(partnerType) {
+  return partnerTypeToSpendHead[partnerType] || "Misc";
 }
 
 function escapeHtml(value) {

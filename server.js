@@ -37,6 +37,27 @@ const defaultFootwearBrandBudgets = {
   Cult: 500000,
   Avant: 500000
 };
+const partnerTypeOptions = [
+  "Agency",
+  "Production House",
+  "Influencer / Talent",
+  "Media Vendor",
+  "Event Agency",
+  "Sponsorship Partner",
+  "Research Vendor",
+  "Misc Vendor"
+];
+const spendHeadOptions = ["Media", "Production", "Influencers", "Events", "Sponsorships", "Research", "Misc"];
+const partnerTypeToSpendHead = {
+  Agency: "Media",
+  "Production House": "Production",
+  "Influencer / Talent": "Influencers",
+  "Media Vendor": "Media",
+  "Event Agency": "Events",
+  "Sponsorship Partner": "Sponsorships",
+  "Research Vendor": "Research",
+  "Misc Vendor": "Misc"
+};
 
 await fs.mkdir(dataDir, { recursive: true });
 const db = new DatabaseSync(dbPath);
@@ -117,6 +138,7 @@ async function handleApi(request, response, url) {
 
     const nextStatus = typeof body.status === "string" ? sanitizeStatus(body.status) : null;
     const nextPoNumber = Object.hasOwn(body, "poNumber") ? sanitizeText(body.poNumber) : null;
+    const nextPoDate = Object.hasOwn(body, "poDate") ? sanitizeDate(body.poDate) : null;
 
     if (nextStatus !== null) {
       db.prepare("UPDATE entries SET status = ? WHERE id = ?").run(nextStatus, id);
@@ -124,6 +146,10 @@ async function handleApi(request, response, url) {
 
     if (nextPoNumber !== null) {
       db.prepare("UPDATE entries SET po_number = ? WHERE id = ?").run(nextPoNumber, id);
+    }
+
+    if (nextPoDate !== null) {
+      db.prepare("UPDATE entries SET po_date = ? WHERE id = ?").run(nextPoDate, id);
     }
 
     respondJson(response, 200, mapEntryRow(db.prepare("SELECT * FROM entries WHERE id = ?").get(id)));
@@ -253,6 +279,7 @@ function initializeDatabase() {
       category TEXT NOT NULL,
       brand TEXT NOT NULL,
       spend_type TEXT NOT NULL,
+      spend_head TEXT NOT NULL,
       vendor TEXT NOT NULL,
       record_type TEXT NOT NULL,
       purpose TEXT NOT NULL,
@@ -283,6 +310,33 @@ function initializeDatabase() {
   if (!hasAttachmentUploadedAtColumn) {
     db.exec(`ALTER TABLE entries ADD COLUMN attachment_uploaded_at TEXT NOT NULL DEFAULT ''`);
   }
+  const hasSpendHeadColumn = entryColumns.some((column) => column.name === "spend_head");
+  if (!hasSpendHeadColumn) {
+    db.exec(`ALTER TABLE entries ADD COLUMN spend_head TEXT NOT NULL DEFAULT ''`);
+  }
+  db.prepare(`
+    UPDATE entries
+    SET spend_head = CASE spend_type
+      WHEN 'Agency' THEN 'Media'
+      WHEN 'Production House' THEN 'Production'
+      WHEN 'Influencer / Talent' THEN 'Influencers'
+      WHEN 'Media Vendor' THEN 'Media'
+      WHEN 'Event Agency' THEN 'Events'
+      WHEN 'Sponsorship Partner' THEN 'Sponsorships'
+      WHEN 'Research Vendor' THEN 'Research'
+      WHEN 'Misc Vendor' THEN 'Misc'
+      WHEN 'Influencer' THEN 'Influencers'
+      WHEN 'Event' THEN 'Events'
+      WHEN 'Partnership' THEN 'Sponsorships'
+      WHEN 'Social Media' THEN 'Media'
+      WHEN 'Production' THEN 'Production'
+      WHEN 'Agency Retainer' THEN 'Media'
+      WHEN 'Travel' THEN 'Misc'
+      WHEN 'Other' THEN 'Misc'
+      ELSE 'Misc'
+    END
+    WHERE spend_head = ''
+  `).run();
 
   if (db.prepare("SELECT COUNT(*) AS count FROM budgets").get().count === 0) {
     writeBudgets(defaultBudgets, defaultFootwearBrandBudgets);
@@ -366,9 +420,9 @@ function insertEntry(entry) {
   db.prepare(`
     INSERT INTO entries (
       id, owner_user_id, owner_name, po_number, po_date, category, brand,
-      spend_type, vendor, record_type, purpose, amount, status, notes,
+      spend_type, spend_head, vendor, record_type, purpose, amount, status, notes,
       attachment_key, attachment_name, attachment_uploaded_at, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     entry.id,
     entry.ownerUserId,
@@ -378,6 +432,7 @@ function insertEntry(entry) {
     entry.category,
     entry.brand,
     entry.spendType,
+    entry.spendHead,
     entry.vendor,
     entry.recordType,
     entry.purpose,
@@ -445,6 +500,7 @@ function sanitizeEntry(input, sessionUser) {
   const recordType = sanitizeRecordType(input.recordType);
   const ownerName = sanitizeText(input.ownerName || input.owner);
   const category = sanitizeCategory(input.category);
+  const partnerType = sanitizePartnerType(input.partnerType || input.spendType);
   return {
     id: typeof input.id === "string" ? input.id : randomUUID(),
     ownerUserId: null,
@@ -453,7 +509,8 @@ function sanitizeEntry(input, sessionUser) {
     poDate: sanitizeDate(input.poDate),
     category,
     brand: sanitizeBrand(input.brand, category),
-    spendType: sanitizeText(input.spendType),
+    spendType: partnerType,
+    spendHead: sanitizeSpendHead(input.spendHead, partnerType),
     vendor: sanitizeText(input.vendor),
     recordType,
     purpose: sanitizeText(input.purpose),
@@ -477,6 +534,7 @@ function mapEntryRow(row) {
     category: row.category,
     brand: row.brand,
     spendType: row.spend_type,
+    spendHead: row.spend_head,
     vendor: row.vendor,
     recordType: row.record_type,
     purpose: row.purpose,
@@ -523,6 +581,18 @@ function sanitizeCategory(value) {
 function sanitizeBrand(value, category) {
   if (category !== "Footwear") return "";
   return Object.hasOwn(defaultFootwearBrandBudgets, value) ? value : "Cult";
+}
+
+function sanitizePartnerType(value) {
+  const text = String(value || "").trim();
+  if (partnerTypeOptions.includes(text)) return text;
+  return legacySpendTypeToPartnerType(text);
+}
+
+function sanitizeSpendHead(value, partnerType) {
+  const text = String(value || "").trim();
+  if (spendHeadOptions.includes(text)) return text;
+  return partnerTypeToSpendHead[partnerType] || "Misc";
 }
 
 function sanitizeStatus(value) {
@@ -578,6 +648,20 @@ function sanitizeAttachmentUpload(input) {
 function buildAttachmentKey(entryId, fileName) {
   const safeFileName = sanitizeAttachmentName(fileName || "attachment.pdf") || "attachment.pdf";
   return `po-attachments/${entryId}/${Date.now()}-${safeFileName}`;
+}
+
+function legacySpendTypeToPartnerType(value) {
+  const mapping = {
+    Influencer: "Influencer / Talent",
+    Event: "Event Agency",
+    Partnership: "Sponsorship Partner",
+    "Social Media": "Media Vendor",
+    Production: "Production House",
+    "Agency Retainer": "Agency",
+    Travel: "Misc Vendor",
+    Other: "Misc Vendor"
+  };
+  return mapping[value] || "Misc Vendor";
 }
 
 function clampMoney(value) {

@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=12" />
+    <link rel="stylesheet" href="./styles.css?v=16" />
   </head>
   <body>
     <div class="page-shell">
@@ -36,7 +36,7 @@
           </div>
           <div class="hero-stats">
             <div>
-              <span>Committed</span>
+              <span>PO spend</span>
               <strong id="heroCommitted">Rs 0</strong>
             </div>
             <div>
@@ -55,7 +55,7 @@
             <small>Editable in budget setup</small>
           </article>
           <article class="summary-card">
-            <span>PO-Based Spend</span>
+            <span>PO Spend</span>
             <strong id="poValue">Rs 0</strong>
             <small>Entries tracked against a PO</small>
           </article>
@@ -147,7 +147,54 @@
           </article>
         </section>
 
-        <section class="two-column-grid form-layout">
+        <section class="two-column-grid intelligence-layout">
+          <article class="panel spend-head-panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">Spend intelligence</p>
+                <h2>Where the budget is going</h2>
+                <p class="panel-copy">Track overall spend by reporting bucket so leadership can quickly see how much is flowing into media, production, influencers, events, sponsorships, research, and misc.</p>
+              </div>
+            </div>
+            <div class="insight-metrics">
+              <div>
+                <span>Top spend head</span>
+                <strong id="topSpendHead">No entries yet</strong>
+              </div>
+            </div>
+            <div class="spend-bars" id="spendHeadBars"></div>
+          </article>
+
+          <article class="panel spend-matrix-panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">Category x Spend Head</p>
+                <h2>Which category is spending on what</h2>
+                <p class="panel-copy">Use this matrix to see how each product category is splitting spend across the main marketing buckets.</p>
+              </div>
+            </div>
+            <div class="quarter-table-wrap">
+              <table class="quarter-table matrix-table">
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th>Media</th>
+                    <th>Production</th>
+                    <th>Influencers</th>
+                    <th>Events</th>
+                    <th>Sponsorships</th>
+                    <th>Research</th>
+                    <th>Misc</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody id="spendHeadMatrixBody"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section class="form-layout">
           <article class="panel form-panel" id="poFormPanel">
             <div class="panel-header">
               <div>
@@ -166,7 +213,7 @@
                 <input id="poNumber" name="poNumber" type="text" placeholder="Optional for now" />
               </div>
               <div class="field">
-                <label for="poDate">PO date</label>
+                <label for="poDate">Date</label>
                 <input id="poDate" name="poDate" type="date" required />
               </div>
               <div class="field">
@@ -181,21 +228,33 @@
                 </select>
               </div>
               <div class="field">
-                <label for="spendType">Spend type</label>
-                <select id="spendType" name="spendType" required>
-                  <option value="Influencer">Influencer</option>
-                  <option value="Event">Event</option>
-                  <option value="Partnership">Partnership</option>
-                  <option value="Social Media">Social Media</option>
-                  <option value="Production">Production</option>
-                  <option value="Agency Retainer">Agency Retainer</option>
-                  <option value="Travel">Travel</option>
-                  <option value="Other">Other</option>
+                <label for="partnerType">Partner type</label>
+                <select id="partnerType" name="partnerType" required>
+                  <option value="Agency">Agency</option>
+                  <option value="Production House">Production House</option>
+                  <option value="Influencer / Talent">Influencer / Talent</option>
+                  <option value="Media Vendor">Media Vendor</option>
+                  <option value="Event Agency">Event Agency</option>
+                  <option value="Sponsorship Partner">Sponsorship Partner</option>
+                  <option value="Research Vendor">Research Vendor</option>
+                  <option value="Misc Vendor">Misc Vendor</option>
                 </select>
               </div>
               <div class="field">
                 <label for="vendor">Agency or vendor</label>
                 <input id="vendor" name="vendor" type="text" placeholder="Alpha Talent" required />
+              </div>
+              <div class="field">
+                <label for="spendHead">Spend head</label>
+                <select id="spendHead" name="spendHead" required>
+                  <option value="Media">Media</option>
+                  <option value="Production">Production</option>
+                  <option value="Influencers">Influencers</option>
+                  <option value="Events">Events</option>
+                  <option value="Sponsorships">Sponsorships</option>
+                  <option value="Research">Research</option>
+                  <option value="Misc">Misc</option>
+                </select>
               </div>
               <div class="field">
                 <label for="recordType">Transaction basis</label>
@@ -215,7 +274,7 @@
                 />
               </div>
               <div class="field">
-                <label for="amount" id="amountLabel">PO amount</label>
+                <label for="amount" id="amountLabel">Amount</label>
                 <input id="amount" name="amount" type="number" min="0" step="0.01" placeholder="125000" required />
               </div>
               <div class="field">
@@ -223,44 +282,16 @@
                 <input id="notes" name="notes" type="text" placeholder="Optional comments" />
               </div>
               <div class="field full-width">
-                <label for="attachment">Attach PO PDF</label>
+                <label for="attachment">Attach PDF</label>
                 <input id="attachment" name="attachment" type="file" accept="application/pdf,.pdf" />
               </div>
               <div class="form-actions full-width">
-                <button class="primary-btn" type="submit">Save PO</button>
+                <button class="primary-btn" type="submit">SAVE</button>
                 <button class="ghost-btn" type="button" id="clearForm">Clear</button>
                 <button class="ghost-btn" type="button" id="resetApp">Reset all data</button>
               </div>
               <p class="form-message" id="formMessage" aria-live="polite"></p>
             </form>
-          </article>
-
-          <article class="panel workflow-panel">
-            <div class="panel-header">
-              <div>
-                <p class="panel-kicker">How teams will use this</p>
-                <h2>Smooth enough for daily work</h2>
-                <p class="panel-copy">Designed so the team can log fast, update later, and keep the budget picture trustworthy.</p>
-              </div>
-            </div>
-            <div class="workflow-list">
-              <div>
-                <span>1</span>
-                <p>Each teammate logs the PO the moment it is raised.</p>
-              </div>
-              <div>
-                <span>2</span>
-                <p>The category budget instantly reflects committed spend.</p>
-              </div>
-              <div>
-                <span>3</span>
-                <p>For invoice-only vendors, the team logs the invoice directly instead of forcing a PO flow.</p>
-              </div>
-              <div>
-                <span>4</span>
-                <p>You can filter by owner, vendor, category, or status any time.</p>
-              </div>
-            </div>
           </article>
         </section>
 
@@ -300,8 +331,9 @@
                   <th>Date</th>
                   <th>Category</th>
                   <th>Brand</th>
-                  <th>Spend type</th>
+                  <th>Partner type</th>
                   <th>Vendor</th>
+                  <th>Spend head</th>
                   <th>Basis</th>
                   <th>Purpose</th>
                   <th>Amount</th>
@@ -337,6 +369,6 @@
 
     <input id="rowPdfInput" type="file" accept="application/pdf,.pdf" hidden />
 
-    <script src="./app.js?v=12"></script>
+    <script src="./app.js?v=16"></script>
   </body>
 </html>

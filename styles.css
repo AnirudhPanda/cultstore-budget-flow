@@ -116,6 +116,10 @@ select:focus-visible {
   margin-top: 24px;
 }
 
+.hero-actions .sync-chip {
+  margin-left: auto;
+}
+
 .hero-tags {
   display: flex;
   flex-wrap: wrap;
@@ -306,6 +310,14 @@ label {
   grid-template-columns: 0.82fr 1.18fr;
 }
 
+.intelligence-layout {
+  grid-template-columns: 0.82fr 1.18fr;
+}
+
+.form-layout {
+  display: grid;
+}
+
 .panel {
   border-radius: 26px;
   padding: 24px;
@@ -431,6 +443,7 @@ label {
 #searchInput,
 #filterCategory,
 #filterStatus,
+.table-date-input,
 .table-po-input,
 .table-status-select {
   width: 100%;
@@ -472,6 +485,11 @@ label {
   font-weight: 800;
   background: rgba(95, 104, 109, 0.12);
   color: var(--ink);
+}
+
+.spend-head-pill {
+  background: rgba(239, 188, 90, 0.18);
+  color: #8a6700;
 }
 
 .budget-input:hover,
@@ -653,6 +671,10 @@ label {
   background: rgba(255, 255, 255, 0.74);
 }
 
+.matrix-table {
+  min-width: 920px;
+}
+
 .quarter-table th,
 .quarter-table td {
   padding: 15px 14px;
@@ -671,7 +693,7 @@ label {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 1120px;
+  min-width: 1240px;
   background: rgba(255, 255, 255, 0.74);
 }
 
@@ -783,6 +805,13 @@ tbody tr:hover {
   font-weight: 600;
 }
 
+.table-date-input {
+  min-width: 150px;
+  padding: 10px 12px;
+  background: #fffdf9;
+  font-weight: 600;
+}
+
 .notes {
   margin-top: 6px;
   color: var(--muted);
@@ -843,13 +872,13 @@ tbody tr:hover {
   transition: transform 160ms ease, background 160ms ease;
 }
 
-th:nth-child(12),
-td:nth-child(12) {
+th:nth-child(13),
+td:nth-child(13) {
   width: 176px;
 }
 
-th:nth-child(13),
-td:nth-child(13) {
+th:nth-child(14),
+td:nth-child(14) {
   width: 92px;
   text-align: center;
 }
@@ -864,6 +893,7 @@ td:nth-child(13) {
   padding: 28px;
   color: var(--muted);
 }
+
 
 @media (max-width: 1080px) {
   .hero,
