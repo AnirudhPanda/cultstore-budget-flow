@@ -28,6 +28,7 @@ body {
   min-height: 100vh;
   font-family: "Manrope", sans-serif;
   color: var(--ink);
+  overflow-x: hidden;
   background:
     radial-gradient(circle at top left, rgba(239, 188, 90, 0.35), transparent 24%),
     radial-gradient(circle at right 12% top 18%, rgba(210, 106, 49, 0.2), transparent 18%),
@@ -48,7 +49,8 @@ select:focus-visible {
 }
 
 .page-shell {
-  width: min(1320px, calc(100vw - 32px));
+  width: min(1320px, calc(100% - 32px));
+  max-width: calc(100% - 32px);
   margin: 0 auto;
   padding: 32px 0 56px;
 }
@@ -296,6 +298,14 @@ label {
 .two-column-grid {
   display: grid;
   gap: 20px;
+}
+
+.hero > *,
+.summary-grid > *,
+.two-column-grid > *,
+.form-layout > *,
+.dashboard > * {
+  min-width: 0;
 }
 
 .summary-grid {
@@ -651,6 +661,7 @@ label {
 .table-wrap {
   margin-top: 18px;
   overflow: auto;
+  max-width: 100%;
   border-radius: 18px;
   border: 1px solid rgba(23, 33, 38, 0.08);
   background: rgba(255, 255, 255, 0.5);
@@ -659,6 +670,7 @@ label {
 .quarter-table-wrap {
   margin-top: 18px;
   overflow: auto;
+  max-width: 100%;
   border-radius: 18px;
   border: 1px solid rgba(23, 33, 38, 0.08);
   background: rgba(255, 255, 255, 0.5);
@@ -909,7 +921,8 @@ td:nth-child(14) {
 
 @media (max-width: 760px) {
   .page-shell {
-    width: min(100vw - 20px, 100%);
+    width: calc(100% - 20px);
+    max-width: calc(100% - 20px);
     padding-top: 16px;
   }
 
