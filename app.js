@@ -518,19 +518,19 @@ function renderTable() {
           <td>${escapeHtml(entry.ownerName || "Unknown")}</td>
           <td>
             <input
-              class="table-date-input"
-              data-id="${escapeHtml(entry.id)}"
-              type="date"
-              value="${escapeHtml(entry.poDate)}"
-            />
-          </td>
-          <td>
-            <input
               class="table-po-input"
               data-id="${escapeHtml(entry.id)}"
               type="text"
               value="${escapeHtml(entry.poNumber)}"
               placeholder="Add later"
+            />
+          </td>
+          <td>
+            <input
+              class="table-date-input"
+              data-id="${escapeHtml(entry.id)}"
+              type="date"
+              value="${escapeHtml(entry.poDate)}"
             />
           </td>
           <td>${escapeHtml(entry.category)}</td>
@@ -725,7 +725,7 @@ function getTopQuarterCategoryLabel(categoryTotals) {
 }
 
 function renderStatusOptions(selectedStatus) {
-  return ["Raised", "Invoiced", "Paid", "Delayed", "Cancelled"]
+  return ["PO In Process", "Raised", "Invoiced", "Paid", "Delayed", "Cancelled"]
     .map((status) => `<option value="${status}" ${status === selectedStatus ? "selected" : ""}>${status}</option>`)
     .join("");
 }

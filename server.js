@@ -596,7 +596,7 @@ function sanitizeSpendHead(value, partnerType) {
 }
 
 function sanitizeStatus(value) {
-  const statuses = new Set(["Raised", "Invoiced", "Paid", "Delayed", "Cancelled"]);
+  const statuses = new Set(["PO In Process", "Raised", "Invoiced", "Paid", "Delayed", "Cancelled"]);
   return statuses.has(value) ? value : "Raised";
 }
 

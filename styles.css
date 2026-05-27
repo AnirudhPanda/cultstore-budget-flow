@@ -790,6 +790,10 @@ tbody tr:hover {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
+.table-status-select[data-status="PO In Process"] {
+  color: #8a6700;
+}
+
 .table-status-select[data-status="Raised"] {
   color: var(--brand-deep);
 }
