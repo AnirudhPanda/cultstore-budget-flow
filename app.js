@@ -20,14 +20,27 @@ const partnerTypeOptions = [
   "Research Vendor",
   "Misc Vendor"
 ];
-const spendHeadOptions = ["Media", "Production", "Influencers", "Events", "Sponsorships", "Research", "Misc"];
+const spendHeadOptions = [
+  "Media",
+  "Brand Campaign Production",
+  "Influencer",
+  "Social Media Production",
+  "Social Media Boosting",
+  "Event",
+  "Event Video Production",
+  "Brand Campaign Agency",
+  "Research",
+  "CRM",
+  "Product Orders",
+  "Misc"
+];
 const partnerTypeToSpendHead = {
-  Agency: "Media",
-  "Production House": "Production",
-  "Influencer / Talent": "Influencers",
+  Agency: "Brand Campaign Agency",
+  "Production House": "Brand Campaign Production",
+  "Influencer / Talent": "Influencer",
   "Media Vendor": "Media",
-  "Event Agency": "Events",
-  "Sponsorship Partner": "Sponsorships",
+  "Event Agency": "Event",
+  "Sponsorship Partner": "Event",
   "Research Vendor": "Research",
   "Misc Vendor": "Misc"
 };
@@ -49,6 +62,7 @@ const refs = {
   brandSelect: document.getElementById("brand"),
   partnerType: document.getElementById("partnerType"),
   spendHead: document.getElementById("spendHead"),
+  filterMonth: document.getElementById("filterMonth"),
   filterCategory: document.getElementById("filterCategory"),
   poForm: document.getElementById("poForm"),
   poTableBody: document.getElementById("poTableBody"),
@@ -75,6 +89,27 @@ const refs = {
   resetApp: document.getElementById("resetApp"),
   syncStatus: document.getElementById("syncStatus"),
   formMessage: document.getElementById("formMessage"),
+  editModal: document.getElementById("editModal"),
+  editEntryForm: document.getElementById("editEntryForm"),
+  editEntryId: document.getElementById("editEntryId"),
+  editOwner: document.getElementById("editOwner"),
+  editPoNumber: document.getElementById("editPoNumber"),
+  editPoDate: document.getElementById("editPoDate"),
+  editCategory: document.getElementById("editCategory"),
+  editBrandField: document.getElementById("editBrandField"),
+  editBrand: document.getElementById("editBrand"),
+  editPartnerType: document.getElementById("editPartnerType"),
+  editVendor: document.getElementById("editVendor"),
+  editSpendHead: document.getElementById("editSpendHead"),
+  editRecordType: document.getElementById("editRecordType"),
+  editStatus: document.getElementById("editStatus"),
+  editPurpose: document.getElementById("editPurpose"),
+  editAmount: document.getElementById("editAmount"),
+  editNotes: document.getElementById("editNotes"),
+  editEntrySave: document.getElementById("editEntrySave"),
+  editEntryCancel: document.getElementById("editEntryCancel"),
+  editModalClose: document.getElementById("editModalClose"),
+  editFormMessage: document.getElementById("editFormMessage"),
   downloadSheet: document.getElementById("downloadSheet"),
   recordType: document.getElementById("recordType"),
   amountLabel: document.getElementById("amountLabel"),
@@ -88,15 +123,19 @@ async function init() {
   bindEvents();
   setDefaultDate();
   updateAmountLabel();
+  populatePartnerTypeOptions();
+  populateSpendHeadOptions();
   syncSpendHeadFromPartnerType();
   populateCategoryOptions();
   updateBrandField();
+  updateEditBrandField();
   await refreshState();
 }
 
 function bindEvents() {
   refs.poForm.addEventListener("submit", handleSubmit);
   refs.searchInput.addEventListener("input", renderTable);
+  refs.filterMonth.addEventListener("change", renderTable);
   refs.filterCategory.addEventListener("change", renderTable);
   refs.filterStatus.addEventListener("change", renderTable);
   refs.clearForm.addEventListener("click", () => {
@@ -126,6 +165,19 @@ function bindEvents() {
   refs.recordType.addEventListener("change", updateAmountLabel);
   refs.categorySelect.addEventListener("change", updateBrandField);
   refs.partnerType.addEventListener("change", syncSpendHeadFromPartnerType);
+  refs.editEntryForm.addEventListener("submit", handleEditSubmit);
+  refs.editCategory.addEventListener("change", updateEditBrandField);
+  refs.editPartnerType.addEventListener("change", syncEditSpendHeadFromPartnerType);
+  refs.editEntryCancel.addEventListener("click", closeEditModal);
+  refs.editModalClose.addEventListener("click", closeEditModal);
+  refs.editModal.addEventListener("click", (event) => {
+    if (event.target === refs.editModal) closeEditModal();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !refs.editModal.classList.contains("hidden")) {
+      closeEditModal();
+    }
+  });
   refs.rowPdfInput.addEventListener("change", handleRowPdfSelection);
 }
 
@@ -171,10 +223,15 @@ async function refreshState(message = "Connected") {
 
 function populateCategoryOptions() {
   const currentCategory = refs.categorySelect.value;
+  const currentEditCategory = refs.editCategory.value;
   const currentFilter = refs.filterCategory.value;
   const categories = Object.keys(state.budgets);
 
   refs.categorySelect.innerHTML = categories
+    .map((category) => `<option value="${category}">${category}</option>`)
+    .join("");
+
+  refs.editCategory.innerHTML = categories
     .map((category) => `<option value="${category}">${category}</option>`)
     .join("");
 
@@ -184,8 +241,26 @@ function populateCategoryOptions() {
   ].join("");
 
   refs.categorySelect.value = categories.includes(currentCategory) ? currentCategory : categories[0];
+  refs.editCategory.value = categories.includes(currentEditCategory) ? currentEditCategory : categories[0];
   refs.filterCategory.value = ["all", ...categories].includes(currentFilter) ? currentFilter : "all";
   updateBrandField();
+  updateEditBrandField();
+}
+
+function populatePartnerTypeOptions() {
+  const options = partnerTypeOptions
+    .map((partnerType) => `<option value="${partnerType}">${partnerType}</option>`)
+    .join("");
+  refs.partnerType.innerHTML = options;
+  refs.editPartnerType.innerHTML = options;
+}
+
+function populateSpendHeadOptions() {
+  const options = spendHeadOptions
+    .map((spendHead) => `<option value="${spendHead}">${spendHead}</option>`)
+    .join("");
+  refs.spendHead.innerHTML = options;
+  refs.editSpendHead.innerHTML = options;
 }
 
 async function handleSubmit(event) {
@@ -246,6 +321,7 @@ async function handleSubmit(event) {
 
 function render() {
   populateCategoryOptions();
+  populateMonthFilterOptions();
   renderSummary();
   renderBudgetList();
   renderSpendBars();
@@ -474,6 +550,7 @@ function renderSpendHeadSection() {
 
 function renderTable() {
   const query = refs.searchInput.value.trim().toLowerCase();
+  const monthFilter = refs.filterMonth.value;
   const categoryFilter = refs.filterCategory.value;
   const statusFilter = refs.filterStatus.value;
 
@@ -498,8 +575,9 @@ function renderTable() {
 
     const matchesCategory = categoryFilter === "all" || entry.category === categoryFilter;
     const matchesStatus = statusFilter === "all" || entry.status === statusFilter;
+    const matchesMonth = monthFilter === "all" || getMonthKey(entry.poDate) === monthFilter;
 
-    return matchesQuery && matchesCategory && matchesStatus;
+    return matchesQuery && matchesCategory && matchesStatus && matchesMonth;
   });
 
   if (filtered.length === 0) {
@@ -550,7 +628,10 @@ function renderTable() {
               ${renderStatusOptions(entry.status)}
             </select>
           </td>
-          <td><button class="delete-btn" data-id="${escapeHtml(entry.id)}">Delete</button></td>
+          <td class="table-row-actions">
+            <button class="inline-action edit-btn" type="button" data-id="${escapeHtml(entry.id)}">Edit</button>
+            <button class="delete-btn" data-id="${escapeHtml(entry.id)}">Delete</button>
+          </td>
         </tr>
       `
     )
@@ -632,6 +713,13 @@ function renderTable() {
     });
   });
 
+  refs.poTableBody.querySelectorAll(".edit-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      const entry = state.entries.find((item) => item.id === button.dataset.id);
+      if (entry) openEditModal(entry);
+    });
+  });
+
   refs.poTableBody.querySelectorAll(".attachment-trigger").forEach((button) => {
     button.addEventListener("click", () => {
       pendingRowPdfEntryId = button.dataset.id;
@@ -647,6 +735,19 @@ function getSpendByCategory() {
     acc[entry.category] = (acc[entry.category] || 0) + entry.amount;
     return acc;
   }, {});
+}
+
+function populateMonthFilterOptions() {
+  const currentValue = refs.filterMonth.value;
+  const monthKeys = [...new Set(state.entries.map((entry) => getMonthKey(entry.poDate)).filter(Boolean))]
+    .sort((a, b) => b.localeCompare(a));
+
+  refs.filterMonth.innerHTML = [
+    `<option value="all">All months</option>`,
+    ...monthKeys.map((monthKey) => `<option value="${monthKey}">${formatMonthLabel(monthKey)}</option>`)
+  ].join("");
+
+  refs.filterMonth.value = ["all", ...monthKeys].includes(currentValue) ? currentValue : "all";
 }
 
 function getSpendByFootwearBrand() {
@@ -741,6 +842,75 @@ function renderAttachmentCell(entry) {
   }
 
   return `<button class="inline-action attachment-trigger" type="button" data-id="${escapeHtml(entry.id)}">Upload PDF</button>`;
+}
+
+function openEditModal(entry) {
+  refs.editEntryId.value = entry.id;
+  refs.editOwner.value = entry.ownerName;
+  refs.editPoNumber.value = entry.poNumber;
+  refs.editPoDate.value = entry.poDate;
+  refs.editCategory.value = entry.category;
+  refs.editPartnerType.value = entry.partnerType;
+  refs.editVendor.value = entry.vendor;
+  refs.editRecordType.value = entry.recordType;
+  refs.editPurpose.value = entry.purpose;
+  refs.editAmount.value = entry.amount;
+  refs.editNotes.value = entry.notes;
+  refs.editStatus.value = entry.status;
+  updateEditBrandField();
+  refs.editBrand.value = entry.brand || "Cult";
+  refs.editSpendHead.value = spendHeadOptions.includes(entry.spendHead)
+    ? entry.spendHead
+    : getSpendHeadForPartnerType(entry.partnerType);
+  refs.editModal.classList.remove("hidden");
+  document.body.classList.add("modal-open");
+  setEditFormMessage("");
+  refs.editOwner.focus();
+}
+
+function closeEditModal() {
+  refs.editModal.classList.add("hidden");
+  document.body.classList.remove("modal-open");
+  refs.editEntryForm.reset();
+  setEditFormMessage("");
+}
+
+async function handleEditSubmit(event) {
+  event.preventDefault();
+  const formData = new FormData(refs.editEntryForm);
+  const payload = {
+    ownerName: String(formData.get("ownerName")).trim(),
+    poNumber: String(formData.get("poNumber")).trim(),
+    poDate: String(formData.get("poDate")),
+    category: String(formData.get("category")),
+    brand: String(formData.get("brand") || ""),
+    partnerType: String(formData.get("partnerType")),
+    spendHead: String(formData.get("spendHead")),
+    vendor: String(formData.get("vendor")).trim(),
+    recordType: String(formData.get("recordType")),
+    purpose: String(formData.get("purpose")).trim(),
+    amount: Number(formData.get("amount")) || 0,
+    status: String(formData.get("status")),
+    notes: String(formData.get("notes")).trim()
+  };
+
+  refs.editEntrySave.disabled = true;
+  refs.editEntrySave.textContent = "Saving...";
+
+  try {
+    await apiFetch(`/api/entries/${encodeURIComponent(refs.editEntryId.value)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    });
+    await refreshState("Entry updated");
+    closeEditModal();
+  } catch (error) {
+    console.error(error);
+    setEditFormMessage(error.message || "Could not update the entry.", "error");
+  } finally {
+    refs.editEntrySave.disabled = false;
+    refs.editEntrySave.textContent = "Save changes";
+  }
 }
 
 function downloadSheet() {
@@ -868,6 +1038,15 @@ function setFormMessage(text, tone = "") {
   }
 }
 
+function setEditFormMessage(text, tone = "") {
+  refs.editFormMessage.textContent = text;
+  if (tone) {
+    refs.editFormMessage.dataset.tone = tone;
+  } else {
+    delete refs.editFormMessage.dataset.tone;
+  }
+}
+
 function updateAmountLabel() {
   refs.amountLabel.textContent = "Amount";
 }
@@ -885,8 +1064,25 @@ function updateBrandField() {
   }
 }
 
+function updateEditBrandField() {
+  const isFootwear = refs.editCategory.value === "Footwear";
+  refs.editBrandField.classList.toggle("hidden", !isFootwear);
+  refs.editBrand.disabled = !isFootwear;
+  if (isFootwear) {
+    refs.editBrand.value = Object.hasOwn(defaultFootwearBrandBudgets, refs.editBrand.value)
+      ? refs.editBrand.value
+      : "Cult";
+  } else {
+    refs.editBrand.value = "Cult";
+  }
+}
+
 function syncSpendHeadFromPartnerType() {
   refs.spendHead.value = getSpendHeadForPartnerType(refs.partnerType.value);
+}
+
+function syncEditSpendHeadFromPartnerType() {
+  refs.editSpendHead.value = getSpendHeadForPartnerType(refs.editPartnerType.value);
 }
 
 function formatCurrency(value) {
@@ -939,6 +1135,21 @@ function getQuarterFromDate(value) {
   return "JFM";
 }
 
+function getMonthKey(value) {
+  if (!value) return "";
+  return String(value).slice(0, 7);
+}
+
+function formatMonthLabel(monthKey) {
+  const [year, month] = monthKey.split("-");
+  if (!year || !month) return monthKey;
+  const date = new Date(Number(year), Number(month) - 1, 1);
+  return new Intl.DateTimeFormat("en-IN", {
+    month: "long",
+    year: "numeric"
+  }).format(date);
+}
+
 function normalizeRecordType(value) {
   return value === "Invoice" ? "Invoice" : "PO";
 }
@@ -967,6 +1178,8 @@ function normalizePartnerType(entry) {
 function normalizeSpendHead(entry) {
   const rawValue = String(entry.spendHead || "").trim();
   if (spendHeadOptions.includes(rawValue)) return rawValue;
+  const mappedLegacyValue = legacySpendHeadToCurrent(rawValue);
+  if (spendHeadOptions.includes(mappedLegacyValue)) return mappedLegacyValue;
   return getSpendHeadForPartnerType(normalizePartnerType(entry));
 }
 
@@ -982,6 +1195,20 @@ function legacySpendTypeToPartnerType(value) {
     Other: "Misc Vendor"
   };
   return mapping[value] || "Misc Vendor";
+}
+
+function legacySpendHeadToCurrent(value) {
+  const mapping = {
+    Media: "Media",
+    Production: "Brand Campaign Production",
+    Influencers: "Influencer",
+    Events: "Event",
+    Sponsorships: "Event",
+    Research: "Research",
+    Misc: "Misc"
+  };
+
+  return mapping[value] || "";
 }
 
 function getSpendHeadForPartnerType(partnerType) {

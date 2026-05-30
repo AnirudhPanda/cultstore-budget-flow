@@ -179,11 +179,16 @@
                   <tr>
                     <th>Category</th>
                     <th>Media</th>
-                    <th>Production</th>
-                    <th>Influencers</th>
-                    <th>Events</th>
-                    <th>Sponsorships</th>
+                    <th>Brand Campaign Production</th>
+                    <th>Influencer</th>
+                    <th>Social Media Production</th>
+                    <th>Social Media Boosting</th>
+                    <th>Event</th>
+                    <th>Event Video Production</th>
+                    <th>Brand Campaign Agency</th>
                     <th>Research</th>
+                    <th>CRM</th>
+                    <th>Product Orders</th>
                     <th>Misc</th>
                     <th>Total</th>
                   </tr>
@@ -229,16 +234,7 @@
               </div>
               <div class="field">
                 <label for="partnerType">Partner type</label>
-                <select id="partnerType" name="partnerType" required>
-                  <option value="Agency">Agency</option>
-                  <option value="Production House">Production House</option>
-                  <option value="Influencer / Talent">Influencer / Talent</option>
-                  <option value="Media Vendor">Media Vendor</option>
-                  <option value="Event Agency">Event Agency</option>
-                  <option value="Sponsorship Partner">Sponsorship Partner</option>
-                  <option value="Research Vendor">Research Vendor</option>
-                  <option value="Misc Vendor">Misc Vendor</option>
-                </select>
+                <select id="partnerType" name="partnerType" required></select>
               </div>
               <div class="field">
                 <label for="vendor">Agency or vendor</label>
@@ -246,15 +242,7 @@
               </div>
               <div class="field">
                 <label for="spendHead">Spend head</label>
-                <select id="spendHead" name="spendHead" required>
-                  <option value="Media">Media</option>
-                  <option value="Production">Production</option>
-                  <option value="Influencers">Influencers</option>
-                  <option value="Events">Events</option>
-                  <option value="Sponsorships">Sponsorships</option>
-                  <option value="Research">Research</option>
-                  <option value="Misc">Misc</option>
-                </select>
+                <select id="spendHead" name="spendHead" required></select>
               </div>
               <div class="field">
                 <label for="recordType">Transaction basis</label>
@@ -304,6 +292,9 @@
             </div>
             <div class="table-actions">
               <input id="searchInput" type="search" placeholder="Search vendor, PO, owner..." />
+              <select id="filterMonth">
+                <option value="all">All months</option>
+              </select>
               <select id="filterCategory">
                 <option value="all">All categories</option>
               </select>
@@ -348,6 +339,91 @@
           </div>
         </section>
       </main>
+    </div>
+
+    <div class="modal-backdrop hidden" id="editModal">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
+        <div class="modal-header">
+          <div>
+            <p class="panel-kicker">Edit entry</p>
+            <h2 id="editModalTitle">Update transaction details</h2>
+          </div>
+          <button class="ghost-btn modal-close-btn" type="button" id="editModalClose">Close</button>
+        </div>
+        <form id="editEntryForm" class="po-form modal-form">
+          <input id="editEntryId" name="id" type="hidden" />
+          <div class="field">
+            <label for="editOwner">Team member</label>
+            <input id="editOwner" name="ownerName" type="text" required />
+          </div>
+          <div class="field">
+            <label for="editPoNumber">PO number</label>
+            <input id="editPoNumber" name="poNumber" type="text" placeholder="Optional for now" />
+          </div>
+          <div class="field">
+            <label for="editPoDate">Date</label>
+            <input id="editPoDate" name="poDate" type="date" required />
+          </div>
+          <div class="field">
+            <label for="editCategory">Category</label>
+            <select id="editCategory" name="category" required></select>
+          </div>
+          <div class="field hidden" id="editBrandField">
+            <label for="editBrand">Brand</label>
+            <select id="editBrand" name="brand">
+              <option value="Cult">Cult</option>
+              <option value="Avant">Avant</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="editPartnerType">Partner type</label>
+            <select id="editPartnerType" name="partnerType" required></select>
+          </div>
+          <div class="field">
+            <label for="editVendor">Agency or vendor</label>
+            <input id="editVendor" name="vendor" type="text" required />
+          </div>
+          <div class="field">
+            <label for="editSpendHead">Spend head</label>
+            <select id="editSpendHead" name="spendHead" required></select>
+          </div>
+          <div class="field">
+            <label for="editRecordType">Transaction basis</label>
+            <select id="editRecordType" name="recordType" required>
+              <option value="PO">PO-based</option>
+              <option value="Invoice">Invoice-based</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="editStatus">Status</label>
+            <select id="editStatus" name="status" required>
+              <option value="PO In Process">PO In Process</option>
+              <option value="Raised">Raised</option>
+              <option value="Invoiced">Invoiced</option>
+              <option value="Paid">Paid</option>
+              <option value="Delayed">Delayed</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
+          </div>
+          <div class="field full-width">
+            <label for="editPurpose">What is this being spent on?</label>
+            <input id="editPurpose" name="purpose" type="text" required />
+          </div>
+          <div class="field">
+            <label for="editAmount">Amount</label>
+            <input id="editAmount" name="amount" type="number" min="0" step="0.01" required />
+          </div>
+          <div class="field">
+            <label for="editNotes">Notes</label>
+            <input id="editNotes" name="notes" type="text" placeholder="Optional comments" />
+          </div>
+          <div class="form-actions full-width">
+            <button class="primary-btn" type="submit" id="editEntrySave">Save changes</button>
+            <button class="ghost-btn" type="button" id="editEntryCancel">Cancel</button>
+          </div>
+          <p class="form-message" id="editFormMessage" aria-live="polite"></p>
+        </form>
+      </div>
     </div>
 
     <template id="budgetItemTemplate">

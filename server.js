@@ -47,14 +47,27 @@ const partnerTypeOptions = [
   "Research Vendor",
   "Misc Vendor"
 ];
-const spendHeadOptions = ["Media", "Production", "Influencers", "Events", "Sponsorships", "Research", "Misc"];
+const spendHeadOptions = [
+  "Media",
+  "Brand Campaign Production",
+  "Influencer",
+  "Social Media Production",
+  "Social Media Boosting",
+  "Event",
+  "Event Video Production",
+  "Brand Campaign Agency",
+  "Research",
+  "CRM",
+  "Product Orders",
+  "Misc"
+];
 const partnerTypeToSpendHead = {
-  Agency: "Media",
-  "Production House": "Production",
-  "Influencer / Talent": "Influencers",
+  Agency: "Brand Campaign Agency",
+  "Production House": "Brand Campaign Production",
+  "Influencer / Talent": "Influencer",
   "Media Vendor": "Media",
-  "Event Agency": "Events",
-  "Sponsorship Partner": "Sponsorships",
+  "Event Agency": "Event",
+  "Sponsorship Partner": "Event",
   "Research Vendor": "Research",
   "Misc Vendor": "Misc"
 };
@@ -129,28 +142,45 @@ async function handleApi(request, response, url) {
   if (request.method === "PATCH" && url.pathname.startsWith("/api/entries/")) {
     const id = decodeURIComponent(url.pathname.replace("/api/entries/", ""));
     const body = await readJsonBody(request);
-    const existingEntry = db.prepare("SELECT id FROM entries WHERE id = ?").get(id);
+    const existingRow = db.prepare("SELECT * FROM entries WHERE id = ?").get(id);
 
-    if (!existingEntry) {
+    if (!existingRow) {
       respondJson(response, 404, { error: "Entry not found" });
       return;
     }
+    const currentEntry = mapEntryRow(existingRow);
+    const updatedEntry = sanitizeEntry({
+      ...currentEntry,
+      ...body,
+      id: currentEntry.id,
+      createdAt: currentEntry.createdAt,
+      attachmentKey: currentEntry.attachmentKey,
+      attachmentName: currentEntry.attachmentName,
+      attachmentUploadedAt: currentEntry.attachmentUploadedAt
+    });
 
-    const nextStatus = typeof body.status === "string" ? sanitizeStatus(body.status) : null;
-    const nextPoNumber = Object.hasOwn(body, "poNumber") ? sanitizeText(body.poNumber) : null;
-    const nextPoDate = Object.hasOwn(body, "poDate") ? sanitizeDate(body.poDate) : null;
-
-    if (nextStatus !== null) {
-      db.prepare("UPDATE entries SET status = ? WHERE id = ?").run(nextStatus, id);
-    }
-
-    if (nextPoNumber !== null) {
-      db.prepare("UPDATE entries SET po_number = ? WHERE id = ?").run(nextPoNumber, id);
-    }
-
-    if (nextPoDate !== null) {
-      db.prepare("UPDATE entries SET po_date = ? WHERE id = ?").run(nextPoDate, id);
-    }
+    db.prepare(`
+      UPDATE entries
+      SET owner_name = ?, po_number = ?, po_date = ?, category = ?, brand = ?,
+        spend_type = ?, spend_head = ?, vendor = ?, record_type = ?, purpose = ?,
+        amount = ?, status = ?, notes = ?
+      WHERE id = ?
+    `).run(
+      updatedEntry.ownerName,
+      updatedEntry.poNumber,
+      updatedEntry.poDate,
+      updatedEntry.category,
+      updatedEntry.brand,
+      updatedEntry.spendType,
+      updatedEntry.spendHead,
+      updatedEntry.vendor,
+      updatedEntry.recordType,
+      updatedEntry.purpose,
+      updatedEntry.amount,
+      updatedEntry.status,
+      updatedEntry.notes,
+      id
+    );
 
     respondJson(response, 200, mapEntryRow(db.prepare("SELECT * FROM entries WHERE id = ?").get(id)));
     return;
@@ -317,25 +347,36 @@ function initializeDatabase() {
   db.prepare(`
     UPDATE entries
     SET spend_head = CASE spend_type
-      WHEN 'Agency' THEN 'Media'
-      WHEN 'Production House' THEN 'Production'
-      WHEN 'Influencer / Talent' THEN 'Influencers'
+      WHEN 'Agency' THEN 'Brand Campaign Agency'
+      WHEN 'Production House' THEN 'Brand Campaign Production'
+      WHEN 'Influencer / Talent' THEN 'Influencer'
       WHEN 'Media Vendor' THEN 'Media'
-      WHEN 'Event Agency' THEN 'Events'
-      WHEN 'Sponsorship Partner' THEN 'Sponsorships'
+      WHEN 'Event Agency' THEN 'Event'
+      WHEN 'Sponsorship Partner' THEN 'Event'
       WHEN 'Research Vendor' THEN 'Research'
       WHEN 'Misc Vendor' THEN 'Misc'
-      WHEN 'Influencer' THEN 'Influencers'
-      WHEN 'Event' THEN 'Events'
-      WHEN 'Partnership' THEN 'Sponsorships'
+      WHEN 'Influencer' THEN 'Influencer'
+      WHEN 'Event' THEN 'Event'
+      WHEN 'Partnership' THEN 'Event'
       WHEN 'Social Media' THEN 'Media'
-      WHEN 'Production' THEN 'Production'
-      WHEN 'Agency Retainer' THEN 'Media'
+      WHEN 'Production' THEN 'Brand Campaign Production'
+      WHEN 'Agency Retainer' THEN 'Brand Campaign Agency'
       WHEN 'Travel' THEN 'Misc'
       WHEN 'Other' THEN 'Misc'
       ELSE 'Misc'
     END
     WHERE spend_head = ''
+  `).run();
+  db.prepare(`
+    UPDATE entries
+    SET spend_head = CASE spend_head
+      WHEN 'Production' THEN 'Brand Campaign Production'
+      WHEN 'Influencers' THEN 'Influencer'
+      WHEN 'Events' THEN 'Event'
+      WHEN 'Sponsorships' THEN 'Event'
+      ELSE spend_head
+    END
+    WHERE spend_head IN ('Production', 'Influencers', 'Events', 'Sponsorships')
   `).run();
 
   if (db.prepare("SELECT COUNT(*) AS count FROM budgets").get().count === 0) {
@@ -592,6 +633,8 @@ function sanitizePartnerType(value) {
 function sanitizeSpendHead(value, partnerType) {
   const text = String(value || "").trim();
   if (spendHeadOptions.includes(text)) return text;
+  const mappedLegacyValue = legacySpendHeadToCurrent(text);
+  if (spendHeadOptions.includes(mappedLegacyValue)) return mappedLegacyValue;
   return partnerTypeToSpendHead[partnerType] || "Misc";
 }
 
@@ -613,6 +656,20 @@ function sanitizeAmount(input) {
   const invoiceAmount = clampMoney(input.invoiceAmount);
   if (invoiceAmount > 0 && poAmount === 0) return invoiceAmount;
   return poAmount || invoiceAmount;
+}
+
+function legacySpendHeadToCurrent(value) {
+  const mapping = {
+    Media: "Media",
+    Production: "Brand Campaign Production",
+    Influencers: "Influencer",
+    Events: "Event",
+    Sponsorships: "Event",
+    Research: "Research",
+    Misc: "Misc"
+  };
+
+  return mapping[value] || "";
 }
 
 function sanitizeAttachmentName(value) {
