@@ -39,6 +39,7 @@ const defaultFootwearBrandBudgets = {
 };
 const partnerTypeOptions = [
   "Agency",
+  "In House",
   "Production House",
   "Influencer / Talent",
   "Media Vendor",
@@ -63,6 +64,7 @@ const spendHeadOptions = [
 ];
 const partnerTypeToSpendHead = {
   Agency: "Brand Campaign Agency",
+  "In House": "Misc",
   "Production House": "Brand Campaign Production",
   "Influencer / Talent": "Influencer",
   "Media Vendor": "Media",
@@ -348,6 +350,7 @@ function initializeDatabase() {
     UPDATE entries
     SET spend_head = CASE spend_type
       WHEN 'Agency' THEN 'Brand Campaign Agency'
+      WHEN 'In House' THEN 'Misc'
       WHEN 'Production House' THEN 'Brand Campaign Production'
       WHEN 'Influencer / Talent' THEN 'Influencer'
       WHEN 'Media Vendor' THEN 'Media'

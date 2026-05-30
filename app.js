@@ -12,6 +12,7 @@ const defaultFootwearBrandBudgets = {
 };
 const partnerTypeOptions = [
   "Agency",
+  "In House",
   "Production House",
   "Influencer / Talent",
   "Media Vendor",
@@ -36,6 +37,7 @@ const spendHeadOptions = [
 ];
 const partnerTypeToSpendHead = {
   Agency: "Brand Campaign Agency",
+  "In House": "Misc",
   "Production House": "Brand Campaign Production",
   "Influencer / Talent": "Influencer",
   "Media Vendor": "Media",
