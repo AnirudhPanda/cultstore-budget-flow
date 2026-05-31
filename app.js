@@ -52,6 +52,7 @@ const state = {
   footwearBrandBudgets: { ...defaultFootwearBrandBudgets },
   entries: []
 };
+const STATE_CACHE_KEY = "cultstore-budget-flow-cache-v1";
 
 const refs = {
   owner: document.getElementById("owner"),
@@ -131,6 +132,7 @@ async function init() {
   populateCategoryOptions();
   updateBrandField();
   updateEditBrandField();
+  hydrateStateFromCache();
   await refreshState();
 }
 
@@ -190,37 +192,57 @@ function setDefaultDate() {
 async function refreshState(message = "Connected") {
   try {
     setSyncStatus("Syncing...", "pending");
-    const nextState = await apiFetch("/api/state");
-    state.budgets = Object.fromEntries(
-      Object.entries(defaultBudgets).map(([category, defaultAmount]) => [
-        category,
-        Number(nextState?.budgets?.[category]) || defaultAmount
-      ])
-    );
-    state.footwearBrandBudgets = Object.fromEntries(
-      Object.entries(defaultFootwearBrandBudgets).map(([brand, defaultAmount]) => [
-        brand,
-        Number(nextState?.footwearBrandBudgets?.[brand]) || defaultAmount
-      ])
-    );
-    state.entries = Array.isArray(nextState.entries)
-      ? nextState.entries.map((entry) => ({
-          ...entry,
-          category: entry.category === "Massage Oils" ? "Massagers" : entry.category,
-          brand: normalizeBrand(entry),
-          partnerType: normalizePartnerType(entry),
-          spendHead: normalizeSpendHead(entry),
-          ownerName: normalizeOwnerName(entry),
-          recordType: normalizeRecordType(entry.recordType),
-          amount: normalizeAmount(entry)
-        }))
-      : [];
+    const nextState = await apiFetch("/api/state", {}, { retries: 2, retryDelayMs: 1200, timeoutMs: 15000 });
+    applyIncomingState(nextState);
+    persistStateCache(nextState);
     render();
     setSyncStatus(message, "online");
   } catch (error) {
-    setSyncStatus("Server unavailable", "error");
+    const cachedState = readStateCache();
+    if (cachedState) {
+      applyIncomingState(cachedState);
+      render();
+      setSyncStatus("Weak network: showing last synced data", "pending");
+    } else {
+      setSyncStatus("Server unavailable", "error");
+    }
     console.error(error);
   }
+}
+
+function applyIncomingState(nextState) {
+  state.budgets = Object.fromEntries(
+    Object.entries(defaultBudgets).map(([category, defaultAmount]) => [
+      category,
+      Number(nextState?.budgets?.[category]) || defaultAmount
+    ])
+  );
+  state.footwearBrandBudgets = Object.fromEntries(
+    Object.entries(defaultFootwearBrandBudgets).map(([brand, defaultAmount]) => [
+      brand,
+      Number(nextState?.footwearBrandBudgets?.[brand]) || defaultAmount
+    ])
+  );
+  state.entries = Array.isArray(nextState.entries)
+    ? nextState.entries.map((entry) => ({
+        ...entry,
+        category: entry.category === "Massage Oils" ? "Massagers" : entry.category,
+        brand: normalizeBrand(entry),
+        partnerType: normalizePartnerType(entry),
+        spendHead: normalizeSpendHead(entry),
+        ownerName: normalizeOwnerName(entry),
+        recordType: normalizeRecordType(entry.recordType),
+        amount: normalizeAmount(entry)
+      }))
+    : [];
+}
+
+function hydrateStateFromCache() {
+  const cachedState = readStateCache();
+  if (!cachedState) return;
+  applyIncomingState(cachedState);
+  render();
+  setSyncStatus("Loading latest data...", "pending");
 }
 
 function populateCategoryOptions() {
@@ -974,22 +996,52 @@ function downloadSheet() {
   setSyncStatus("Sheet downloaded", "online");
 }
 
-async function apiFetch(url, options = {}) {
-  const response = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
-    ...options
-  });
+async function apiFetch(url, options = {}, config = {}) {
+  const retries = config.retries ?? 0;
+  const retryDelayMs = config.retryDelayMs ?? 800;
+  const timeoutMs = config.timeoutMs ?? 12000;
+  let attempt = 0;
+  let lastError = null;
 
-  const text = await response.text();
-  const payload = text ? JSON.parse(text) : {};
+  while (attempt <= retries) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
-  if (!response.ok) {
-    const error = new Error(payload.error || payload.detail || `Request failed with status ${response.status}`);
-    error.status = response.status;
-    throw error;
+    try {
+      const response = await fetch(url, {
+        headers: { "Content-Type": "application/json" },
+        ...options,
+        signal: controller.signal
+      });
+
+      const text = await response.text();
+      const payload = text ? JSON.parse(text) : {};
+
+      if (!response.ok) {
+        const error = new Error(payload.error || payload.detail || `Request failed with status ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+
+      return payload;
+    } catch (error) {
+      lastError = error?.name === "AbortError"
+        ? new Error("Connection timed out. Please check your network and try again.")
+        : error;
+
+      if (attempt >= retries) {
+        throw lastError;
+      }
+
+      await delay(retryDelayMs * (attempt + 1));
+    } finally {
+      window.clearTimeout(timeout);
+    }
+
+    attempt += 1;
   }
 
-  return payload;
+  throw lastError || new Error("Request failed");
 }
 
 async function uploadPdfForEntry(entryId, file) {
@@ -1029,6 +1081,27 @@ async function handleRowPdfSelection(event) {
 function setSyncStatus(text, tone) {
   refs.syncStatus.textContent = text;
   refs.syncStatus.dataset.tone = tone;
+}
+
+function persistStateCache(payload) {
+  try {
+    window.localStorage.setItem(STATE_CACHE_KEY, JSON.stringify(payload));
+  } catch {
+    // Ignore storage failures so the app still works in restrictive browsers.
+  }
+}
+
+function readStateCache() {
+  try {
+    const raw = window.localStorage.getItem(STATE_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function delay(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function setFormMessage(text, tone = "") {
