@@ -15,6 +15,7 @@ const dataDir = configuredDataDir
     ? configuredDataDir
     : path.join(__dirname, configuredDataDir)
   : path.join(__dirname, "data");
+const uploadsDir = path.join(dataDir, "uploads");
 const jsonDataPath = path.join(dataDir, "budget-flow.json");
 const dbPath = path.join(dataDir, "budget-flow.db");
 const port = Number(process.env.PORT) || 3000;
@@ -75,6 +76,7 @@ const partnerTypeToSpendHead = {
 };
 
 await fs.mkdir(dataDir, { recursive: true });
+await fs.mkdir(uploadsDir, { recursive: true });
 const db = new DatabaseSync(dbPath);
 initializeDatabase();
 await migrateLegacyJsonIfNeeded();
@@ -107,9 +109,9 @@ async function handleApi(request, response, url) {
         dbPath
       },
       uploads: {
-        provider: "r2",
-        configured: isR2Configured(),
-        bucket: r2Config.bucket || null
+        provider: getAttachmentStorageProvider(),
+        configured: true,
+        bucket: isR2Configured() ? r2Config.bucket || null : null
       }
     });
     return;
@@ -197,12 +199,9 @@ async function handleApi(request, response, url) {
       return;
     }
 
-    if (!isR2Configured()) {
-      respondJson(response, 503, { error: "R2 storage is not configured yet" });
-      return;
-    }
-
-    const object = await getObjectFromR2(entry.attachment_key);
+    const object = isR2Configured()
+      ? await getObjectFromR2(entry.attachment_key)
+      : await getObjectFromLocal(entry.attachment_key);
     const dispositionType = url.searchParams.get("download") === "1" ? "attachment" : "inline";
     response.writeHead(200, {
       "Content-Type": object.contentType || "application/pdf",
@@ -210,6 +209,11 @@ async function handleApi(request, response, url) {
     });
 
     if (object.body) {
+      if (Buffer.isBuffer(object.body) || object.body instanceof Uint8Array) {
+        response.end(object.body);
+        return;
+      }
+
       Readable.fromWeb(object.body).pipe(response);
       return;
     }
@@ -227,19 +231,18 @@ async function handleApi(request, response, url) {
       return;
     }
 
-    if (!isR2Configured()) {
-      respondJson(response, 503, { error: "R2 storage is not configured yet" });
-      return;
-    }
-
     const body = await readJsonBody(request);
     const attachment = sanitizeAttachmentUpload(body);
     const attachmentKey = buildAttachmentKey(id, attachment.fileName);
 
-    await putObjectInR2(attachmentKey, attachment.buffer, attachment.contentType);
+    if (isR2Configured()) {
+      await putObjectInR2(attachmentKey, attachment.buffer, attachment.contentType);
+    } else {
+      await putObjectInLocal(attachmentKey, attachment.buffer);
+    }
 
     if (entry.attachment_key && entry.attachment_key !== attachmentKey) {
-      await deleteObjectFromR2(entry.attachment_key).catch(() => {});
+      await deleteAttachmentObject(entry.attachment_key).catch(() => {});
     }
 
     const uploadedAt = new Date().toISOString();
@@ -257,8 +260,8 @@ async function handleApi(request, response, url) {
     const id = decodeURIComponent(url.pathname.replace("/api/entries/", ""));
     const existingEntry = db.prepare("SELECT attachment_key FROM entries WHERE id = ?").get(id);
     db.prepare("DELETE FROM entries WHERE id = ?").run(id);
-    if (existingEntry?.attachment_key && isR2Configured()) {
-      await deleteObjectFromR2(existingEntry.attachment_key).catch(() => {});
+    if (existingEntry?.attachment_key) {
+      await deleteAttachmentObject(existingEntry.attachment_key).catch(() => {});
     }
     respondJson(response, 200, { ok: true });
     return;
@@ -499,9 +502,7 @@ async function resetAppData() {
     INSERT INTO footwear_brand_budgets (brand, amount) VALUES (?, ?)
     ON CONFLICT(brand) DO UPDATE SET amount = excluded.amount
   `);
-  const attachmentKeys = isR2Configured()
-    ? db.prepare("SELECT attachment_key FROM entries WHERE attachment_key != ''").all().map((row) => row.attachment_key)
-    : [];
+  const attachmentKeys = db.prepare("SELECT attachment_key FROM entries WHERE attachment_key != ''").all().map((row) => row.attachment_key);
   db.exec("BEGIN");
   try {
     db.prepare("DELETE FROM entries").run();
@@ -520,7 +521,7 @@ async function resetAppData() {
   }
 
   if (attachmentKeys.length > 0) {
-    await Promise.all(attachmentKeys.map((key) => deleteObjectFromR2(key).catch(() => {})));
+    await Promise.all(attachmentKeys.map((key) => deleteAttachmentObject(key).catch(() => {})));
   }
 }
 
@@ -734,6 +735,44 @@ function isR2Configured() {
   return Boolean(
     r2Config.accountId && r2Config.bucket && r2Config.accessKeyId && r2Config.secretAccessKey
   );
+}
+
+function getAttachmentStorageProvider() {
+  return isR2Configured() ? "r2" : "local";
+}
+
+function getLocalAttachmentPath(key) {
+  const normalizedKey = String(key || "").replace(/^\/+/, "");
+  return path.join(uploadsDir, normalizedKey);
+}
+
+async function putObjectInLocal(key, buffer) {
+  const filePath = getLocalAttachmentPath(key);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, buffer);
+}
+
+async function getObjectFromLocal(key) {
+  const filePath = getLocalAttachmentPath(key);
+  const body = await fs.readFile(filePath);
+  return {
+    body,
+    contentType: "application/pdf"
+  };
+}
+
+async function deleteObjectFromLocal(key) {
+  const filePath = getLocalAttachmentPath(key);
+  await fs.rm(filePath, { force: true });
+}
+
+async function deleteAttachmentObject(key) {
+  if (!key) return;
+  if (isR2Configured()) {
+    await deleteObjectFromR2(key);
+    return;
+  }
+  await deleteObjectFromLocal(key);
 }
 
 function getR2Endpoint() {

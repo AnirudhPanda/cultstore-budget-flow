@@ -10,6 +10,8 @@ const defaultFootwearBrandBudgets = {
   Cult: 500000,
   Avant: 500000
 };
+const multipleCategoriesValue = "__multiple_categories__";
+const multipleCategoriesLabel = "Multiple Categories";
 const partnerTypeOptions = [
   "Agency",
   "In House",
@@ -61,6 +63,10 @@ const refs = {
   spendBars: document.getElementById("spendBars"),
   spendHeadBars: document.getElementById("spendHeadBars"),
   categorySelect: document.getElementById("category"),
+  splitSection: document.getElementById("splitSection"),
+  splitRows: document.getElementById("splitRows"),
+  addSplitRow: document.getElementById("addSplitRow"),
+  splitSummaryText: document.getElementById("splitSummaryText"),
   brandField: document.getElementById("brandField"),
   brandSelect: document.getElementById("brand"),
   partnerType: document.getElementById("partnerType"),
@@ -116,6 +122,7 @@ const refs = {
   downloadSheet: document.getElementById("downloadSheet"),
   recordType: document.getElementById("recordType"),
   amountLabel: document.getElementById("amountLabel"),
+  amountInput: document.getElementById("amount"),
   rowPdfInput: document.getElementById("rowPdfInput")
 };
 let pendingRowPdfEntryId = null;
@@ -144,9 +151,10 @@ function bindEvents() {
   refs.filterStatus.addEventListener("change", renderTable);
   refs.clearForm.addEventListener("click", () => {
     refs.poForm.reset();
+    resetSplitRows();
     setDefaultDate();
     updateAmountLabel();
-    updateBrandField();
+    handleCategoryChange();
     syncSpendHeadFromPartnerType();
     setFormMessage("");
   });
@@ -160,15 +168,21 @@ function bindEvents() {
     await apiFetch("/api/reset", { method: "POST" });
     await refreshState("Shared data reset");
     refs.poForm.reset();
+    resetSplitRows();
     setDefaultDate();
     updateAmountLabel();
-    updateBrandField();
+    handleCategoryChange();
     syncSpendHeadFromPartnerType();
   });
   refs.downloadSheet.addEventListener("click", downloadSheet);
   refs.recordType.addEventListener("change", updateAmountLabel);
-  refs.categorySelect.addEventListener("change", updateBrandField);
+  refs.amountInput.addEventListener("input", updateSplitSummary);
+  refs.categorySelect.addEventListener("change", handleCategoryChange);
   refs.partnerType.addEventListener("change", syncSpendHeadFromPartnerType);
+  refs.addSplitRow.addEventListener("click", () => {
+    addSplitRow();
+    updateSplitSummary();
+  });
   refs.editEntryForm.addEventListener("submit", handleEditSubmit);
   refs.editCategory.addEventListener("change", updateEditBrandField);
   refs.editPartnerType.addEventListener("change", syncEditSpendHeadFromPartnerType);
@@ -254,6 +268,10 @@ function populateCategoryOptions() {
   refs.categorySelect.innerHTML = categories
     .map((category) => `<option value="${category}">${category}</option>`)
     .join("");
+  refs.categorySelect.insertAdjacentHTML(
+    "beforeend",
+    `<option value="${multipleCategoriesValue}">${multipleCategoriesLabel}</option>`
+  );
 
   refs.editCategory.innerHTML = categories
     .map((category) => `<option value="${category}">${category}</option>`)
@@ -264,10 +282,12 @@ function populateCategoryOptions() {
     ...categories.map((category) => `<option value="${category}">${category}</option>`)
   ].join("");
 
-  refs.categorySelect.value = categories.includes(currentCategory) ? currentCategory : categories[0];
+  refs.categorySelect.value = [...categories, multipleCategoriesValue].includes(currentCategory)
+    ? currentCategory
+    : categories[0];
   refs.editCategory.value = categories.includes(currentEditCategory) ? currentEditCategory : categories[0];
   refs.filterCategory.value = ["all", ...categories].includes(currentFilter) ? currentFilter : "all";
-  updateBrandField();
+  handleCategoryChange();
   updateEditBrandField();
 }
 
@@ -293,7 +313,7 @@ async function handleSubmit(event) {
   const formData = new FormData(form);
   const submitButton = form.querySelector('button[type="submit"]');
 
-  const entry = {
+  const baseEntry = {
     ownerName: String(formData.get("owner")).trim(),
     poNumber: String(formData.get("poNumber")).trim(),
     poDate: String(formData.get("poDate")),
@@ -313,15 +333,25 @@ async function handleSubmit(event) {
   submitButton.textContent = "Saving...";
 
   try {
+    const isSplitEntry = baseEntry.category === multipleCategoriesValue;
     const attachmentFile = refs.attachment.files?.[0] || null;
-    setFormMessage(attachmentFile ? "Saving entry and uploading PDF..." : "Saving entry...", "success");
-    const createdEntry = await apiFetch("/api/entries", {
-      method: "POST",
-      body: JSON.stringify(entry)
-    });
+    const entriesToCreate = buildEntriesForSubmission(baseEntry);
+    setFormMessage(
+      attachmentFile
+        ? `Saving ${isSplitEntry ? "split entries and uploading PDFs" : "entry and uploading PDF"}...`
+        : `Saving ${isSplitEntry ? "split entries" : "entry"}...`,
+      "success"
+    );
 
-    if (attachmentFile) {
-      await uploadPdfForEntry(createdEntry.id, attachmentFile);
+    for (const entry of entriesToCreate) {
+      const createdEntry = await apiFetch("/api/entries", {
+        method: "POST",
+        body: JSON.stringify(entry)
+      });
+
+      if (attachmentFile) {
+        await uploadPdfForEntry(createdEntry.id, attachmentFile);
+      }
     }
   } catch (error) {
     console.error(error);
@@ -333,14 +363,35 @@ async function handleSubmit(event) {
   }
 
   form.reset();
+  const wasSplitEntry = baseEntry.category === multipleCategoriesValue;
   setDefaultDate();
   updateAmountLabel();
-  updateBrandField();
+  resetSplitRows();
+  handleCategoryChange();
   syncSpendHeadFromPartnerType();
-  setFormMessage(`Saved ${entry.poNumber || "transaction"} successfully.`, "success");
+  setFormMessage(
+    wasSplitEntry
+      ? "Saved split transactions successfully."
+      : `Saved ${baseEntry.poNumber || "transaction"} successfully.`,
+    "success"
+  );
   await refreshState("Entry saved");
   submitButton.disabled = false;
   submitButton.textContent = "SAVE";
+}
+
+function buildEntriesForSubmission(baseEntry) {
+  if (baseEntry.category !== multipleCategoriesValue) {
+    return [baseEntry];
+  }
+
+  const splitAllocations = collectSplitAllocations(baseEntry.amount);
+  return splitAllocations.map((allocation) => ({
+    ...baseEntry,
+    category: allocation.category,
+    brand: allocation.brand,
+    amount: allocation.amount
+  }));
 }
 
 function render() {
@@ -1128,8 +1179,10 @@ function updateAmountLabel() {
 
 function updateBrandField() {
   const isFootwear = refs.categorySelect.value === "Footwear";
+  const isMultipleCategories = refs.categorySelect.value === multipleCategoriesValue;
+  refs.splitSection.classList.toggle("hidden", !isMultipleCategories);
   refs.brandField.classList.toggle("hidden", !isFootwear);
-  refs.brandSelect.disabled = !isFootwear;
+  refs.brandSelect.disabled = !isFootwear || isMultipleCategories;
   if (isFootwear) {
     refs.brandSelect.value = Object.hasOwn(defaultFootwearBrandBudgets, refs.brandSelect.value)
       ? refs.brandSelect.value
@@ -1137,6 +1190,11 @@ function updateBrandField() {
   } else {
     refs.brandSelect.value = "Cult";
   }
+  if (isMultipleCategories && refs.splitRows.children.length === 0) {
+    addSplitRow();
+    addSplitRow();
+  }
+  updateSplitSummary();
 }
 
 function updateEditBrandField() {
@@ -1154,6 +1212,130 @@ function updateEditBrandField() {
 
 function syncSpendHeadFromPartnerType() {
   refs.spendHead.value = getSpendHeadForPartnerType(refs.partnerType.value);
+}
+
+function handleCategoryChange() {
+  updateBrandField();
+}
+
+function addSplitRow(values = {}) {
+  const row = document.createElement("div");
+  row.className = "split-row";
+  row.innerHTML = `
+    <div class="split-row-main">
+      <label>
+        Category
+        <select class="split-category"></select>
+      </label>
+      <label class="hidden split-brand-wrap">
+        Brand
+        <select class="split-brand">
+          <option value="Cult">Cult</option>
+          <option value="Avant">Avant</option>
+        </select>
+      </label>
+      <label>
+        Amount
+        <input class="split-amount" type="number" min="0" step="0.01" placeholder="0" />
+      </label>
+    </div>
+    <button class="ghost-btn split-remove-btn" type="button">Remove</button>
+  `;
+
+  const categorySelect = row.querySelector(".split-category");
+  const brandWrap = row.querySelector(".split-brand-wrap");
+  const brandSelect = row.querySelector(".split-brand");
+  const amountInput = row.querySelector(".split-amount");
+  const categories = Object.keys(state.budgets);
+
+  categorySelect.innerHTML = categories
+    .map((category) => `<option value="${category}">${category}</option>`)
+    .join("");
+
+  categorySelect.value = categories.includes(values.category) ? values.category : categories[0];
+  brandSelect.value = Object.hasOwn(defaultFootwearBrandBudgets, values.brand) ? values.brand : "Cult";
+  amountInput.value = values.amount ? String(values.amount) : "";
+
+  const updateRowState = () => {
+    const isFootwear = categorySelect.value === "Footwear";
+    brandWrap.classList.toggle("hidden", !isFootwear);
+    brandSelect.disabled = !isFootwear;
+    if (!isFootwear) {
+      brandSelect.value = "Cult";
+    }
+    updateSplitSummary();
+  };
+
+  categorySelect.addEventListener("change", updateRowState);
+  amountInput.addEventListener("input", updateSplitSummary);
+  brandSelect.addEventListener("change", updateSplitSummary);
+  row.querySelector(".split-remove-btn").addEventListener("click", () => {
+    row.remove();
+    if (refs.splitRows.children.length === 0) {
+      addSplitRow();
+    }
+    updateSplitSummary();
+  });
+
+  refs.splitRows.appendChild(row);
+  updateRowState();
+}
+
+function resetSplitRows() {
+  refs.splitRows.innerHTML = "";
+}
+
+function collectSplitAllocations(totalAmount) {
+  const rows = [...refs.splitRows.querySelectorAll(".split-row")];
+  const allocations = rows
+    .map((row) => {
+      const category = row.querySelector(".split-category")?.value || "";
+      const brandSelect = row.querySelector(".split-brand");
+      const amount = Number(row.querySelector(".split-amount")?.value) || 0;
+      return {
+        category,
+        brand: category === "Footwear" ? brandSelect?.value || "Cult" : "",
+        amount
+      };
+    })
+    .filter((allocation) => allocation.amount > 0);
+
+  if (allocations.length === 0) {
+    throw new Error("Add at least one category allocation before saving.");
+  }
+
+  const duplicateKeys = new Set();
+  for (const allocation of allocations) {
+    const key = `${allocation.category}::${allocation.brand || ""}`;
+    if (duplicateKeys.has(key)) {
+      throw new Error("Each category split should appear only once. Please merge duplicate rows.");
+    }
+    duplicateKeys.add(key);
+  }
+
+  const allocatedTotal = allocations.reduce((sum, allocation) => sum + allocation.amount, 0);
+  if (allocatedTotal !== totalAmount) {
+    throw new Error(`Split total ${formatCurrency(allocatedTotal)} must match the full amount ${formatCurrency(totalAmount)}.`);
+  }
+
+  return allocations;
+}
+
+function updateSplitSummary() {
+  if (refs.categorySelect.value !== multipleCategoriesValue) return;
+  const amounts = [...refs.splitRows.querySelectorAll(".split-amount")].map((input) => Number(input.value) || 0);
+  const allocatedTotal = amounts.reduce((sum, amount) => sum + amount, 0);
+  const totalAmount = Number(document.getElementById("amount").value) || 0;
+  const remaining = totalAmount - allocatedTotal;
+  if (totalAmount === 0) {
+    refs.splitSummaryText.textContent = "Add the full amount first, then split it across categories.";
+    return;
+  }
+  if (remaining === 0) {
+    refs.splitSummaryText.textContent = `Perfect split: ${formatCurrency(allocatedTotal)} allocated across ${amounts.filter((amount) => amount > 0).length} categories.`;
+    return;
+  }
+  refs.splitSummaryText.textContent = `${formatCurrency(allocatedTotal)} allocated. ${remaining > 0 ? `${formatCurrency(remaining)} left to assign.` : `${formatCurrency(Math.abs(remaining))} over the total amount.`}`;
 }
 
 function syncEditSpendHeadFromPartnerType() {
