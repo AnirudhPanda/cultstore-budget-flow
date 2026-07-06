@@ -802,6 +802,24 @@ function renderTable() {
       refs.rowPdfInput.click();
     });
   });
+
+  refs.poTableBody.querySelectorAll(".attachment-remove-btn").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const confirmed = window.confirm("Remove this PDF but keep the transaction?");
+      if (!confirmed) return;
+
+      try {
+        setSyncStatus("Removing PDF...", "pending");
+        await apiFetch(`/api/entries/${encodeURIComponent(button.dataset.id)}/attachment`, {
+          method: "DELETE"
+        });
+        await refreshState("PDF removed");
+      } catch (error) {
+        console.error(error);
+        setSyncStatus("Could not remove PDF", "error");
+      }
+    });
+  });
 }
 
 function getSpendByCategory() {
@@ -912,6 +930,7 @@ function renderAttachmentCell(entry) {
       <div class="attachment-cell">
         <a class="attachment-link" href="/api/entries/${encodeURIComponent(entry.id)}/attachment" target="_blank" rel="noreferrer">View PDF</a>
         <button class="inline-action attachment-trigger" type="button" data-id="${escapeHtml(entry.id)}">Replace</button>
+        <button class="inline-action attachment-remove-btn" type="button" data-id="${escapeHtml(entry.id)}">Remove PDF</button>
       </div>
     `;
   }

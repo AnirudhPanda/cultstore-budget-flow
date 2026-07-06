@@ -256,6 +256,29 @@ async function handleApi(request, response, url) {
     return;
   }
 
+  if (request.method === "DELETE" && url.pathname.startsWith("/api/entries/") && url.pathname.endsWith("/attachment")) {
+    const id = decodeURIComponent(url.pathname.replace("/api/entries/", "").replace("/attachment", ""));
+    const entry = db.prepare("SELECT id, attachment_key FROM entries WHERE id = ?").get(id);
+
+    if (!entry) {
+      respondJson(response, 404, { error: "Entry not found" });
+      return;
+    }
+
+    if (entry.attachment_key) {
+      await deleteAttachmentObject(entry.attachment_key).catch(() => {});
+    }
+
+    db.prepare(`
+      UPDATE entries
+      SET attachment_key = '', attachment_name = '', attachment_uploaded_at = ''
+      WHERE id = ?
+    `).run(id);
+
+    respondJson(response, 200, mapEntryRow(db.prepare("SELECT * FROM entries WHERE id = ?").get(id)));
+    return;
+  }
+
   if (request.method === "DELETE" && url.pathname.startsWith("/api/entries/")) {
     const id = decodeURIComponent(url.pathname.replace("/api/entries/", ""));
     const existingEntry = db.prepare("SELECT attachment_key FROM entries WHERE id = ?").get(id);
