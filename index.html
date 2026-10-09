@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=17" />
+    <link rel="stylesheet" href="./styles.css?v=19" />
   </head>
   <body>
     <div class="page-shell">
@@ -40,12 +40,17 @@
               <strong id="heroCommitted">Rs 0</strong>
             </div>
             <div>
-              <span>Invoices</span>
+              <span>Consultant invoices</span>
               <strong id="heroInvoiced">Rs 0</strong>
             </div>
           </div>
         </section>
       </header>
+
+      <nav class="view-nav" aria-label="Spend view">
+        <button class="view-tab active" type="button" data-view-button="category">Category Spends</button>
+        <button class="view-tab" type="button" data-view-button="brand">Brand Spends</button>
+      </nav>
 
       <main class="dashboard">
         <section class="summary-grid" aria-label="Summary cards">
@@ -60,9 +65,9 @@
             <small>Entries tracked against a PO</small>
           </article>
           <article class="summary-card">
-            <span>Invoice-Based Spend</span>
+            <span>Consultant/Agreement Spend</span>
             <strong id="invoiceValue">Rs 0</strong>
-            <small>Entries tracked directly from invoices</small>
+            <small>No PO required when agreement is signed</small>
           </article>
           <article class="summary-card">
             <span>Budget Remaining</span>
@@ -71,7 +76,40 @@
           </article>
         </section>
 
-        <section class="two-column-grid">
+        <section class="brand-overview hidden" id="brandOverview">
+          <article class="panel brand-budget-panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">Brand budget</p>
+                <h2>D2C brand spends</h2>
+                <p class="panel-copy">Track the standalone 5CR brand pool without splitting it into product categories.</p>
+              </div>
+              <label class="brand-budget-control">
+                Brand budget
+                <input id="brandBudgetInput" class="budget-input" type="number" min="0" step="0.01" />
+              </label>
+            </div>
+            <div class="brand-budget-meter">
+              <div>
+                <span>Used</span>
+                <strong id="brandBudgetUsed">Rs 0</strong>
+              </div>
+              <div>
+                <span>Remaining</span>
+                <strong id="brandBudgetRemaining">Rs 0</strong>
+              </div>
+              <div>
+                <span>Utilisation</span>
+                <strong id="brandBudgetUtilisation">0%</strong>
+              </div>
+            </div>
+            <div class="budget-track">
+              <div class="budget-fill" id="brandBudgetFill"></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="two-column-grid" data-category-only>
           <article class="panel budget-panel">
             <div class="panel-header">
               <div>
@@ -109,7 +147,7 @@
           </article>
         </section>
 
-        <section class="two-column-grid quarter-layout">
+        <section class="two-column-grid quarter-layout" data-category-only>
           <article class="panel quarter-panel">
             <div class="panel-header">
               <div>
@@ -147,7 +185,7 @@
           </article>
         </section>
 
-        <section class="two-column-grid intelligence-layout">
+        <section class="two-column-grid intelligence-layout" data-category-only>
           <article class="panel spend-head-panel">
             <div class="panel-header">
               <div>
@@ -205,7 +243,7 @@
               <div>
                 <p class="panel-kicker">Quick entry</p>
                 <h2>Log a new purchase order</h2>
-                <p class="panel-copy">Capture the essential details now. Choose whether this spend is PO-based or invoice-based, then track payment progress later in the transaction table.</p>
+                <p class="panel-copy">Capture the essential details now. Choose whether this spend is PO-based or covered by a signed consultant agreement, then track payment progress later in the transaction table.</p>
               </div>
             </div>
             <form id="poForm" class="po-form">
@@ -215,13 +253,13 @@
               </div>
               <div class="field">
                 <label for="poNumber">PO number</label>
-                <input id="poNumber" name="poNumber" type="text" placeholder="Optional for now" />
+                <input id="poNumber" name="poNumber" type="text" placeholder="CSP309466" required />
               </div>
               <div class="field">
                 <label for="poDate">Date</label>
                 <input id="poDate" name="poDate" type="date" required />
               </div>
-              <div class="field">
+              <div class="field" id="categoryField">
                 <label for="category">Category</label>
                 <select id="category" name="category" required></select>
               </div>
@@ -248,8 +286,9 @@
                 <label for="recordType">Transaction basis</label>
                 <select id="recordType" name="recordType" required>
                   <option value="PO">PO-based</option>
-                  <option value="Invoice">Invoice-based</option>
+                  <option value="Invoice">Invoice - consultant + agreement signed</option>
                 </select>
+                <p class="field-note" id="recordTypeNote">PO number is not required for consultant/agreement entries.</p>
               </div>
               <div class="field full-width">
                 <label for="purpose">What is this being spent on?</label>
@@ -286,7 +325,7 @@
               </div>
               <div class="field full-width">
                 <label for="attachment">Attach PDF</label>
-                <input id="attachment" name="attachment" type="file" accept="application/pdf,.pdf" />
+                <input id="attachment" name="attachment" type="file" accept="application/pdf,.pdf" required />
               </div>
               <div class="form-actions full-width">
                 <button class="primary-btn" type="submit">SAVE</button>
@@ -327,7 +366,7 @@
           </div>
           <div class="table-meta">
             <span>Status is managed here for active transactions.</span>
-            <span>Use filters to review one category, vendor, or payment stage at a time.</span>
+            <span id="tableModeHint">Use filters to review one category, vendor, or payment stage at a time.</span>
           </div>
           <div class="table-wrap">
             <table>
@@ -379,7 +418,7 @@
             <label for="editPoDate">Date</label>
             <input id="editPoDate" name="poDate" type="date" required />
           </div>
-          <div class="field">
+          <div class="field" id="editCategoryField">
             <label for="editCategory">Category</label>
             <select id="editCategory" name="category" required></select>
           </div>
@@ -406,7 +445,7 @@
             <label for="editRecordType">Transaction basis</label>
             <select id="editRecordType" name="recordType" required>
               <option value="PO">PO-based</option>
-              <option value="Invoice">Invoice-based</option>
+              <option value="Invoice">Invoice - consultant + agreement signed</option>
             </select>
           </div>
           <div class="field">
@@ -461,6 +500,6 @@
 
     <input id="rowPdfInput" type="file" accept="application/pdf,.pdf" hidden />
 
-    <script src="./app.js?v=17"></script>
+    <script src="./app.js?v=19"></script>
   </body>
 </html>

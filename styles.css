@@ -122,6 +122,34 @@ select:focus-visible {
   margin-left: auto;
 }
 
+.view-nav {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 6px;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid var(--stroke);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: 0 14px 36px rgba(63, 39, 20, 0.08);
+}
+
+.view-tab {
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.view-tab.active {
+  background: var(--ink);
+  color: #fffaf2;
+}
+
 .hero-tags {
   display: flex;
   flex-wrap: wrap;
@@ -379,6 +407,45 @@ label {
   color: var(--muted);
 }
 
+.brand-overview {
+  display: grid;
+}
+
+.brand-budget-control {
+  display: grid;
+  gap: 6px;
+  min-width: 220px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.brand-budget-meter {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0 14px;
+}
+
+.brand-budget-meter div {
+  padding: 14px 16px;
+  border: 1px solid rgba(23, 33, 38, 0.06);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.brand-budget-meter span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.brand-budget-meter strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 1.28rem;
+}
+
 .budget-list,
 .spend-bars,
 .workflow-list,
@@ -616,6 +683,13 @@ label {
 .field label {
   font-size: 0.92rem;
   font-weight: 700;
+}
+
+.field-note {
+  margin: -2px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.35;
 }
 
 .full-width {
@@ -1124,6 +1198,18 @@ body.modal-open {
 
   .table-actions {
     width: 100%;
+  }
+
+  .view-nav {
+    width: 100%;
+  }
+
+  .view-tab {
+    flex: 1;
+  }
+
+  .brand-budget-meter {
+    grid-template-columns: 1fr;
   }
 
   .table-actions > * {

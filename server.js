@@ -38,6 +38,8 @@ const defaultFootwearBrandBudgets = {
   Cult: 500000,
   Avant: 500000
 };
+const brandCategory = "Brand";
+const defaultBrandBudget = 50000000;
 const partnerTypeOptions = [
   "Agency",
   "In House",
@@ -138,6 +140,7 @@ async function handleApi(request, response, url) {
   if (request.method === "POST" && url.pathname === "/api/entries") {
     const body = await readJsonBody(request);
     const entry = sanitizeEntry(body);
+    if (!isEntrySaveValid(entry, response)) return;
     insertEntry(entry);
     respondJson(response, 201, entry);
     return;
@@ -162,6 +165,7 @@ async function handleApi(request, response, url) {
       attachmentName: currentEntry.attachmentName,
       attachmentUploadedAt: currentEntry.attachmentUploadedAt
     });
+    if (!isEntrySaveValid(updatedEntry, response)) return;
 
     db.prepare(`
       UPDATE entries
@@ -409,12 +413,32 @@ function initializeDatabase() {
   `).run();
 
   if (db.prepare("SELECT COUNT(*) AS count FROM budgets").get().count === 0) {
-    writeBudgets(defaultBudgets, defaultFootwearBrandBudgets);
+    writeBudgets(getDefaultStoredBudgets(), defaultFootwearBrandBudgets);
+  } else {
+    ensureMissingDefaultBudgets();
   }
 
   if (db.prepare("SELECT COUNT(*) AS count FROM footwear_brand_budgets").get().count === 0) {
     writeBudgets(readBudgets(), defaultFootwearBrandBudgets);
   }
+}
+
+function ensureMissingDefaultBudgets() {
+  const insert = db.prepare(`
+    INSERT INTO budgets (category, amount) VALUES (?, ?)
+    ON CONFLICT(category) DO NOTHING
+  `);
+
+  for (const [category, amount] of Object.entries(getDefaultStoredBudgets())) {
+    insert.run(category, amount);
+  }
+}
+
+function getDefaultStoredBudgets() {
+  return {
+    ...defaultBudgets,
+    [brandCategory]: defaultBrandBudget
+  };
 }
 
 async function migrateLegacyJsonIfNeeded() {
@@ -531,7 +555,7 @@ async function resetAppData() {
     db.prepare("DELETE FROM entries").run();
     db.prepare("DELETE FROM budgets").run();
     db.prepare("DELETE FROM footwear_brand_budgets").run();
-    for (const [category, amount] of Object.entries(defaultBudgets)) {
+    for (const [category, amount] of Object.entries(getDefaultStoredBudgets())) {
       insert.run(category, amount);
     }
     for (const [brand, amount] of Object.entries(defaultFootwearBrandBudgets)) {
@@ -551,7 +575,7 @@ async function resetAppData() {
 function sanitizeBudgets(input) {
   const normalizedInput = { ...(input || {}) };
   delete normalizedInput["Massage Oils"];
-  const merged = { ...defaultBudgets, ...normalizedInput };
+  const merged = { ...getDefaultStoredBudgets(), ...normalizedInput };
   return Object.fromEntries(
     Object.entries(merged).map(([category, amount]) => [String(category), clampMoney(amount)])
   );
@@ -590,6 +614,14 @@ function sanitizeEntry(input, sessionUser) {
     attachmentUploadedAt: typeof input.attachmentUploadedAt === "string" ? input.attachmentUploadedAt : "",
     createdAt: typeof input.createdAt === "string" ? input.createdAt : new Date().toISOString()
   };
+}
+
+function isEntrySaveValid(entry, response) {
+  if (entry.recordType === "PO" && !entry.poNumber) {
+    respondJson(response, 400, { error: "PO number is required for PO-based entries." });
+    return false;
+  }
+  return true;
 }
 
 function mapEntryRow(row) {
@@ -643,6 +675,7 @@ function sanitizeDate(value) {
 function sanitizeCategory(value) {
   const text = String(value || "");
   if (text === "Massage Oils") return "Massagers";
+  if (text === brandCategory) return brandCategory;
   return Object.hasOwn(defaultBudgets, text) ? text : Object.keys(defaultBudgets)[0];
 }
 
@@ -671,7 +704,7 @@ function sanitizeStatus(value) {
 }
 
 function sanitizeRecordType(value) {
-  return value === "Invoice" ? "Invoice" : "PO";
+  return String(value || "").startsWith("Invoice") ? "Invoice" : "PO";
 }
 
 function sanitizeAmount(input) {

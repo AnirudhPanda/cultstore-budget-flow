@@ -10,8 +10,11 @@ const defaultFootwearBrandBudgets = {
   Cult: 500000,
   Avant: 500000
 };
+const brandCategory = "Brand";
+const defaultBrandBudget = 50000000;
 const multipleCategoriesValue = "__multiple_categories__";
 const multipleCategoriesLabel = "Multiple Categories";
+const invoiceRecordTypeLabel = "Invoice - consultant + agreement signed";
 const partnerTypeOptions = [
   "Agency",
   "In House",
@@ -51,6 +54,7 @@ const partnerTypeToSpendHead = {
 
 const state = {
   budgets: { ...defaultBudgets },
+  brandBudget: defaultBrandBudget,
   footwearBrandBudgets: { ...defaultFootwearBrandBudgets },
   entries: []
 };
@@ -58,11 +62,19 @@ const STATE_CACHE_KEY = "cultstore-budget-flow-cache-v1";
 
 const refs = {
   owner: document.getElementById("owner"),
+  poNumber: document.getElementById("poNumber"),
   attachment: document.getElementById("attachment"),
   budgetList: document.getElementById("budgetList"),
+  brandOverview: document.getElementById("brandOverview"),
+  brandBudgetInput: document.getElementById("brandBudgetInput"),
+  brandBudgetUsed: document.getElementById("brandBudgetUsed"),
+  brandBudgetRemaining: document.getElementById("brandBudgetRemaining"),
+  brandBudgetUtilisation: document.getElementById("brandBudgetUtilisation"),
+  brandBudgetFill: document.getElementById("brandBudgetFill"),
   spendBars: document.getElementById("spendBars"),
   spendHeadBars: document.getElementById("spendHeadBars"),
   categorySelect: document.getElementById("category"),
+  categoryField: document.getElementById("categoryField"),
   splitSection: document.getElementById("splitSection"),
   splitRows: document.getElementById("splitRows"),
   addSplitRow: document.getElementById("addSplitRow"),
@@ -73,6 +85,7 @@ const refs = {
   spendHead: document.getElementById("spendHead"),
   filterMonth: document.getElementById("filterMonth"),
   filterCategory: document.getElementById("filterCategory"),
+  tableModeHint: document.getElementById("tableModeHint"),
   poForm: document.getElementById("poForm"),
   poTableBody: document.getElementById("poTableBody"),
   searchInput: document.getElementById("searchInput"),
@@ -105,6 +118,7 @@ const refs = {
   editPoNumber: document.getElementById("editPoNumber"),
   editPoDate: document.getElementById("editPoDate"),
   editCategory: document.getElementById("editCategory"),
+  editCategoryField: document.getElementById("editCategoryField"),
   editBrandField: document.getElementById("editBrandField"),
   editBrand: document.getElementById("editBrand"),
   editPartnerType: document.getElementById("editPartnerType"),
@@ -121,11 +135,13 @@ const refs = {
   editFormMessage: document.getElementById("editFormMessage"),
   downloadSheet: document.getElementById("downloadSheet"),
   recordType: document.getElementById("recordType"),
+  recordTypeNote: document.getElementById("recordTypeNote"),
   amountLabel: document.getElementById("amountLabel"),
   amountInput: document.getElementById("amount"),
   rowPdfInput: document.getElementById("rowPdfInput")
 };
 let pendingRowPdfEntryId = null;
+let activeView = "category";
 
 init();
 
@@ -133,6 +149,7 @@ async function init() {
   bindEvents();
   setDefaultDate();
   updateAmountLabel();
+  updatePoRequirement();
   populatePartnerTypeOptions();
   populateSpendHeadOptions();
   syncSpendHeadFromPartnerType();
@@ -154,6 +171,7 @@ function bindEvents() {
     resetSplitRows();
     setDefaultDate();
     updateAmountLabel();
+    updatePoRequirement();
     handleCategoryChange();
     syncSpendHeadFromPartnerType();
     setFormMessage("");
@@ -171,11 +189,13 @@ function bindEvents() {
     resetSplitRows();
     setDefaultDate();
     updateAmountLabel();
+    updatePoRequirement();
     handleCategoryChange();
     syncSpendHeadFromPartnerType();
   });
   refs.downloadSheet.addEventListener("click", downloadSheet);
   refs.recordType.addEventListener("change", updateAmountLabel);
+  refs.recordType.addEventListener("change", updatePoRequirement);
   refs.amountInput.addEventListener("input", updateSplitSummary);
   refs.categorySelect.addEventListener("change", handleCategoryChange);
   refs.partnerType.addEventListener("change", syncSpendHeadFromPartnerType);
@@ -185,6 +205,7 @@ function bindEvents() {
   });
   refs.editEntryForm.addEventListener("submit", handleEditSubmit);
   refs.editCategory.addEventListener("change", updateEditBrandField);
+  refs.editRecordType.addEventListener("change", updateEditPoRequirement);
   refs.editPartnerType.addEventListener("change", syncEditSpendHeadFromPartnerType);
   refs.editEntryCancel.addEventListener("click", closeEditModal);
   refs.editModalClose.addEventListener("click", closeEditModal);
@@ -197,10 +218,64 @@ function bindEvents() {
     }
   });
   refs.rowPdfInput.addEventListener("change", handleRowPdfSelection);
+  document.querySelectorAll("[data-view-button]").forEach((button) => {
+    button.addEventListener("click", () => switchView(button.dataset.viewButton));
+  });
+  refs.brandBudgetInput.addEventListener("change", async (event) => {
+    state.brandBudget = Number(event.target.value) || 0;
+    await saveBudgets("Brand budget updated");
+  });
 }
 
 function setDefaultDate() {
   document.getElementById("poDate").value = new Date().toISOString().slice(0, 10);
+}
+
+function switchView(nextView) {
+  activeView = nextView === "brand" ? "brand" : "category";
+  refs.searchInput.value = "";
+  refs.filterCategory.value = "all";
+  refs.filterStatus.value = "all";
+  refs.filterMonth.value = "all";
+  resetSplitRows();
+  handleCategoryChange();
+  render();
+}
+
+function getViewEntries() {
+  return state.entries.filter((entry) =>
+    activeView === "brand" ? entry.category === brandCategory : entry.category !== brandCategory
+  );
+}
+
+function getCategoryEntries() {
+  return state.entries.filter((entry) => entry.category !== brandCategory);
+}
+
+function getBrandEntries() {
+  return state.entries.filter((entry) => entry.category === brandCategory);
+}
+
+function getActiveBudgets() {
+  return activeView === "brand" ? { [brandCategory]: state.brandBudget } : state.budgets;
+}
+
+function buildBudgetPayload() {
+  return {
+    ...state.budgets,
+    [brandCategory]: state.brandBudget
+  };
+}
+
+async function saveBudgets(message = "Budgets updated") {
+  await apiFetch("/api/budgets", {
+    method: "PUT",
+    body: JSON.stringify({
+      budgets: buildBudgetPayload(),
+      footwearBrandBudgets: state.footwearBrandBudgets
+    })
+  });
+  await refreshState(message);
 }
 
 async function refreshState(message = "Connected") {
@@ -231,6 +306,7 @@ function applyIncomingState(nextState) {
       Number(nextState?.budgets?.[category]) || defaultAmount
     ])
   );
+  state.brandBudget = Number(nextState?.budgets?.[brandCategory]) || defaultBrandBudget;
   state.footwearBrandBudgets = Object.fromEntries(
     Object.entries(defaultFootwearBrandBudgets).map(([brand, defaultAmount]) => [
       brand,
@@ -240,7 +316,7 @@ function applyIncomingState(nextState) {
   state.entries = Array.isArray(nextState.entries)
     ? nextState.entries.map((entry) => ({
         ...entry,
-        category: entry.category === "Massage Oils" ? "Massagers" : entry.category,
+        category: normalizeCategory(entry.category),
         brand: normalizeBrand(entry),
         partnerType: normalizePartnerType(entry),
         spendHead: normalizeSpendHead(entry),
@@ -317,8 +393,8 @@ async function handleSubmit(event) {
     ownerName: String(formData.get("owner")).trim(),
     poNumber: String(formData.get("poNumber")).trim(),
     poDate: String(formData.get("poDate")),
-    category: String(formData.get("category")),
-    brand: String(formData.get("brand") || ""),
+    category: activeView === "brand" ? brandCategory : String(formData.get("category")),
+    brand: activeView === "brand" ? "" : String(formData.get("brand") || ""),
     partnerType: String(formData.get("partnerType")),
     spendHead: String(formData.get("spendHead")),
     vendor: String(formData.get("vendor")).trim(),
@@ -329,11 +405,16 @@ async function handleSubmit(event) {
     notes: String(formData.get("notes")).trim()
   };
 
+  if (baseEntry.recordType === "PO" && !baseEntry.poNumber) {
+    setFormMessage("PO number is required for PO-based entries.", "error");
+    return;
+  }
+
   submitButton.disabled = true;
   submitButton.textContent = "Saving...";
 
   try {
-    const isSplitEntry = baseEntry.category === multipleCategoriesValue;
+    const isSplitEntry = activeView === "category" && baseEntry.category === multipleCategoriesValue;
     const attachmentFile = refs.attachment.files?.[0] || null;
     const entriesToCreate = buildEntriesForSubmission(baseEntry);
     setFormMessage(
@@ -366,6 +447,7 @@ async function handleSubmit(event) {
   const wasSplitEntry = baseEntry.category === multipleCategoriesValue;
   setDefaultDate();
   updateAmountLabel();
+  updatePoRequirement();
   resetSplitRows();
   handleCategoryChange();
   syncSpendHeadFromPartnerType();
@@ -381,7 +463,7 @@ async function handleSubmit(event) {
 }
 
 function buildEntriesForSubmission(baseEntry) {
-  if (baseEntry.category !== multipleCategoriesValue) {
+  if (activeView === "brand" || baseEntry.category !== multipleCategoriesValue) {
     return [baseEntry];
   }
 
@@ -395,9 +477,11 @@ function buildEntriesForSubmission(baseEntry) {
 }
 
 function render() {
+  renderViewState();
   populateCategoryOptions();
   populateMonthFilterOptions();
   renderSummary();
+  renderBrandOverview();
   renderBudgetList();
   renderSpendBars();
   renderQuarterSection();
@@ -405,10 +489,26 @@ function render() {
   renderTable();
 }
 
+function renderViewState() {
+  document.querySelectorAll("[data-view-button]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.viewButton === activeView);
+  });
+  document.querySelectorAll("[data-category-only]").forEach((section) => {
+    section.classList.toggle("hidden", activeView === "brand");
+  });
+  refs.brandOverview.classList.toggle("hidden", activeView !== "brand");
+  refs.categoryField.classList.toggle("hidden", activeView === "brand");
+  refs.categorySelect.disabled = activeView === "brand";
+  refs.filterCategory.classList.toggle("hidden", activeView === "brand");
+  refs.tableModeHint.textContent = activeView === "brand"
+    ? "Showing only standalone brand spends from the 5CR brand pool."
+    : "Use filters to review one category, vendor, or payment stage at a time.";
+}
+
 function renderSummary() {
-  const categories = Object.keys(state.budgets);
-  const activeEntries = state.entries.filter((entry) => entry.status !== "Cancelled");
-  const totalBudget = categories.reduce((sum, category) => sum + state.budgets[category], 0);
+  const budgets = getActiveBudgets();
+  const activeEntries = getViewEntries().filter((entry) => entry.status !== "Cancelled");
+  const totalBudget = Object.values(budgets).reduce((sum, budget) => sum + budget, 0);
   const poValue = activeEntries
     .filter((entry) => entry.recordType === "PO")
     .reduce((sum, entry) => sum + entry.amount, 0);
@@ -434,7 +534,7 @@ function renderSummary() {
   refs.budgetPulse.textContent =
     utilisation > 0.9 ? "Critical" : utilisation > 0.72 ? "Watch closely" : "Healthy";
 
-  refs.topCategory.textContent = getTopLabel(activeEntries, "category");
+  refs.topCategory.textContent = activeView === "brand" ? "Brand" : getTopLabel(activeEntries, "category");
   refs.topVendor.textContent = getTopLabel(activeEntries, "vendor");
   refs.topOwner.textContent = getTopLabel(activeEntries, "ownerName");
   refs.topSpendHead.textContent = getTopLabel(activeEntries, "spendHead");
@@ -458,14 +558,7 @@ function renderBudgetList() {
     input.value = budget;
     input.addEventListener("change", async (event) => {
       state.budgets[category] = Number(event.target.value) || 0;
-      await apiFetch("/api/budgets", {
-        method: "PUT",
-        body: JSON.stringify({
-          budgets: state.budgets,
-          footwearBrandBudgets: state.footwearBrandBudgets
-        })
-      });
-      await refreshState("Budgets updated");
+      await saveBudgets("Budgets updated");
     });
 
     if (category === "Footwear") {
@@ -493,14 +586,7 @@ function renderBudgetList() {
         brandInput.value = brandBudget;
         brandInput.addEventListener("change", async (event) => {
           state.footwearBrandBudgets[brand] = Number(event.target.value) || 0;
-          await apiFetch("/api/budgets", {
-            method: "PUT",
-            body: JSON.stringify({
-              budgets: state.budgets,
-              footwearBrandBudgets: state.footwearBrandBudgets
-            })
-          });
-          await refreshState("Budgets updated");
+          await saveBudgets("Budgets updated");
         });
         label.appendChild(brandInput);
         subitem.appendChild(label);
@@ -512,6 +598,20 @@ function renderBudgetList() {
 
     refs.budgetList.appendChild(node);
   });
+}
+
+function renderBrandOverview() {
+  const brandSpend = getBrandEntries()
+    .filter((entry) => entry.status !== "Cancelled")
+    .reduce((sum, entry) => sum + entry.amount, 0);
+  const remaining = state.brandBudget - brandSpend;
+  const utilisation = state.brandBudget > 0 ? Math.min(brandSpend / state.brandBudget, 1) : 0;
+
+  refs.brandBudgetInput.value = state.brandBudget;
+  refs.brandBudgetUsed.textContent = formatCurrency(brandSpend);
+  refs.brandBudgetRemaining.textContent = formatCurrency(remaining);
+  refs.brandBudgetUtilisation.textContent = `${Math.round(utilisation * 100)}%`;
+  refs.brandBudgetFill.style.width = `${utilisation * 100}%`;
 }
 
 function renderSpendBars() {
@@ -629,7 +729,7 @@ function renderTable() {
   const categoryFilter = refs.filterCategory.value;
   const statusFilter = refs.filterStatus.value;
 
-  const filtered = state.entries.filter((entry) => {
+  const filtered = getViewEntries().filter((entry) => {
     const matchesQuery =
       !query ||
       [
@@ -673,9 +773,10 @@ function renderTable() {
             <input
               class="table-po-input"
               data-id="${escapeHtml(entry.id)}"
+              data-record-type="${escapeHtml(entry.recordType)}"
               type="text"
               value="${escapeHtml(entry.poNumber)}"
-              placeholder="Add later"
+              placeholder="${entry.recordType === "Invoice" ? "No PO required" : "Required"}"
             />
           </td>
           <td>
@@ -691,7 +792,7 @@ function renderTable() {
           <td>${escapeHtml(entry.partnerType)}</td>
           <td>${escapeHtml(entry.vendor)}</td>
           <td><span class="brand-pill spend-head-pill">${escapeHtml(entry.spendHead)}</span></td>
-          <td><span class="basis-pill" data-basis="${escapeHtml(entry.recordType)}">${escapeHtml(entry.recordType)}</span></td>
+          <td><span class="basis-pill" data-basis="${escapeHtml(entry.recordType)}">${escapeHtml(formatRecordTypeLabel(entry.recordType))}</span></td>
           <td>
             <strong>${escapeHtml(entry.purpose)}</strong>
             ${entry.notes ? `<div class="notes">${escapeHtml(entry.notes)}</div>` : ""}
@@ -729,6 +830,11 @@ function renderTable() {
     const savePoNumber = async () => {
       const nextValue = input.value.trim();
       if (nextValue === initialValue) return;
+      if (input.dataset.recordType === "PO" && !nextValue) {
+        setSyncStatus("PO number required for PO-based entries", "error");
+        input.value = initialValue;
+        return;
+      }
       input.disabled = true;
       try {
         await apiFetch(`/api/entries/${encodeURIComponent(input.dataset.id)}`, {
@@ -823,7 +929,7 @@ function renderTable() {
 }
 
 function getSpendByCategory() {
-  return state.entries.reduce((acc, entry) => {
+  return getCategoryEntries().reduce((acc, entry) => {
     if (entry.status === "Cancelled") return acc;
     acc[entry.category] = (acc[entry.category] || 0) + entry.amount;
     return acc;
@@ -832,7 +938,7 @@ function getSpendByCategory() {
 
 function populateMonthFilterOptions() {
   const currentValue = refs.filterMonth.value;
-  const monthKeys = [...new Set(state.entries.map((entry) => getMonthKey(entry.poDate)).filter(Boolean))]
+  const monthKeys = [...new Set(getViewEntries().map((entry) => getMonthKey(entry.poDate)).filter(Boolean))]
     .sort((a, b) => b.localeCompare(a));
 
   refs.filterMonth.innerHTML = [
@@ -844,7 +950,7 @@ function populateMonthFilterOptions() {
 }
 
 function getSpendByFootwearBrand() {
-  return state.entries.reduce((acc, entry) => {
+  return getCategoryEntries().reduce((acc, entry) => {
     if (entry.status === "Cancelled" || entry.category !== "Footwear" || !entry.brand) return acc;
     acc[entry.brand] = (acc[entry.brand] || 0) + entry.amount;
     return acc;
@@ -852,7 +958,7 @@ function getSpendByFootwearBrand() {
 }
 
 function getSpendBySpendHead() {
-  return state.entries.reduce((acc, entry) => {
+  return getViewEntries().reduce((acc, entry) => {
     if (entry.status === "Cancelled") return acc;
     acc[entry.spendHead] = (acc[entry.spendHead] || 0) + entry.amount;
     return acc;
@@ -867,7 +973,7 @@ function getCategorySpendHeadMatrix() {
     ])
   );
 
-  return state.entries.reduce((acc, entry) => {
+  return getCategoryEntries().reduce((acc, entry) => {
     if (entry.status === "Cancelled") return acc;
     acc[entry.category][entry.spendHead] = (acc[entry.category][entry.spendHead] || 0) + entry.amount;
     return acc;
@@ -875,7 +981,7 @@ function getCategorySpendHeadMatrix() {
 }
 
 function getQuarterTotals() {
-  return state.entries.reduce((acc, entry) => {
+  return getCategoryEntries().reduce((acc, entry) => {
     if (entry.status === "Cancelled") return acc;
     const quarter = getQuarterFromDate(entry.poDate);
     acc[quarter] = (acc[quarter] || 0) + entry.amount;
@@ -891,7 +997,7 @@ function getQuarterCategoryTotals() {
     JFM: {}
   };
 
-  return state.entries.reduce((acc, entry) => {
+  return getCategoryEntries().reduce((acc, entry) => {
     if (entry.status === "Cancelled") return acc;
     const quarter = getQuarterFromDate(entry.poDate);
     acc[quarter][entry.category] = (acc[quarter][entry.category] || 0) + entry.amount;
@@ -924,6 +1030,10 @@ function renderStatusOptions(selectedStatus) {
     .join("");
 }
 
+function formatRecordTypeLabel(value) {
+  return value === "Invoice" ? invoiceRecordTypeLabel : "PO-based";
+}
+
 function renderAttachmentCell(entry) {
   if (entry.attachmentName) {
     return `
@@ -939,19 +1049,23 @@ function renderAttachmentCell(entry) {
 }
 
 function openEditModal(entry) {
+  const isBrandEntry = entry.category === brandCategory;
   refs.editEntryId.value = entry.id;
   refs.editOwner.value = entry.ownerName;
   refs.editPoNumber.value = entry.poNumber;
   refs.editPoDate.value = entry.poDate;
-  refs.editCategory.value = entry.category;
+  refs.editCategoryField.classList.toggle("hidden", isBrandEntry);
+  refs.editCategory.disabled = isBrandEntry;
+  refs.editCategory.value = isBrandEntry ? Object.keys(state.budgets)[0] : entry.category;
   refs.editPartnerType.value = entry.partnerType;
   refs.editVendor.value = entry.vendor;
   refs.editRecordType.value = entry.recordType;
+  updateEditPoRequirement();
   refs.editPurpose.value = entry.purpose;
   refs.editAmount.value = entry.amount;
   refs.editNotes.value = entry.notes;
   refs.editStatus.value = entry.status;
-  updateEditBrandField();
+  updateEditBrandField(isBrandEntry);
   refs.editBrand.value = entry.brand || "Cult";
   refs.editSpendHead.value = spendHeadOptions.includes(entry.spendHead)
     ? entry.spendHead
@@ -966,18 +1080,22 @@ function closeEditModal() {
   refs.editModal.classList.add("hidden");
   document.body.classList.remove("modal-open");
   refs.editEntryForm.reset();
+  refs.editCategory.disabled = false;
+  refs.editCategoryField.classList.remove("hidden");
   setEditFormMessage("");
 }
 
 async function handleEditSubmit(event) {
   event.preventDefault();
   const formData = new FormData(refs.editEntryForm);
+  const currentEntry = state.entries.find((entry) => entry.id === refs.editEntryId.value);
+  const isBrandEntry = currentEntry?.category === brandCategory;
   const payload = {
     ownerName: String(formData.get("ownerName")).trim(),
     poNumber: String(formData.get("poNumber")).trim(),
     poDate: String(formData.get("poDate")),
-    category: String(formData.get("category")),
-    brand: String(formData.get("brand") || ""),
+    category: isBrandEntry ? brandCategory : String(formData.get("category")),
+    brand: isBrandEntry ? "" : String(formData.get("brand") || ""),
     partnerType: String(formData.get("partnerType")),
     spendHead: String(formData.get("spendHead")),
     vendor: String(formData.get("vendor")).trim(),
@@ -987,6 +1105,11 @@ async function handleEditSubmit(event) {
     status: String(formData.get("status")),
     notes: String(formData.get("notes")).trim()
   };
+
+  if (payload.recordType === "PO" && !payload.poNumber) {
+    setEditFormMessage("PO number is required for PO-based entries.", "error");
+    return;
+  }
 
   refs.editEntrySave.disabled = true;
   refs.editEntrySave.textContent = "Saving...";
@@ -1008,7 +1131,8 @@ async function handleEditSubmit(event) {
 }
 
 function downloadSheet() {
-  if (state.entries.length === 0) {
+  const entriesToDownload = getViewEntries();
+  if (entriesToDownload.length === 0) {
     setSyncStatus("No transaction data to download", "error");
     return;
   }
@@ -1031,7 +1155,7 @@ function downloadSheet() {
     "Created At"
   ];
 
-  const rows = state.entries.map((entry) => [
+  const rows = entriesToDownload.map((entry) => [
     entry.ownerName,
     entry.poNumber,
     entry.poDate,
@@ -1040,7 +1164,7 @@ function downloadSheet() {
     entry.partnerType,
     entry.vendor,
     entry.spendHead,
-    entry.recordType,
+    formatRecordTypeLabel(entry.recordType),
     entry.purpose,
     entry.amount,
     entry.attachmentName,
@@ -1196,7 +1320,28 @@ function updateAmountLabel() {
   refs.amountLabel.textContent = "Amount";
 }
 
+function updatePoRequirement() {
+  const isInvoiceWithoutPo = refs.recordType.value === "Invoice";
+  refs.poNumber.required = !isInvoiceWithoutPo;
+  refs.poNumber.placeholder = isInvoiceWithoutPo ? "No PO required" : "CSP309466";
+  refs.recordTypeNote.classList.toggle("hidden", !isInvoiceWithoutPo);
+}
+
+function updateEditPoRequirement() {
+  const isInvoiceWithoutPo = refs.editRecordType.value === "Invoice";
+  refs.editPoNumber.required = !isInvoiceWithoutPo;
+  refs.editPoNumber.placeholder = isInvoiceWithoutPo ? "No PO required" : "CSP309466";
+}
+
 function updateBrandField() {
+  if (activeView === "brand") {
+    refs.splitSection.classList.add("hidden");
+    refs.brandField.classList.add("hidden");
+    refs.brandSelect.disabled = true;
+    refs.brandSelect.value = "Cult";
+    updateSplitSummary();
+    return;
+  }
   const isFootwear = refs.categorySelect.value === "Footwear";
   const isMultipleCategories = refs.categorySelect.value === multipleCategoriesValue;
   refs.splitSection.classList.toggle("hidden", !isMultipleCategories);
@@ -1216,7 +1361,13 @@ function updateBrandField() {
   updateSplitSummary();
 }
 
-function updateEditBrandField() {
+function updateEditBrandField(forceHidden = false) {
+  if (forceHidden) {
+    refs.editBrandField.classList.add("hidden");
+    refs.editBrand.disabled = true;
+    refs.editBrand.value = "Cult";
+    return;
+  }
   const isFootwear = refs.editCategory.value === "Footwear";
   refs.editBrandField.classList.toggle("hidden", !isFootwear);
   refs.editBrand.disabled = !isFootwear;
@@ -1427,7 +1578,14 @@ function formatMonthLabel(monthKey) {
 }
 
 function normalizeRecordType(value) {
-  return value === "Invoice" ? "Invoice" : "PO";
+  return String(value || "").startsWith("Invoice") ? "Invoice" : "PO";
+}
+
+function normalizeCategory(value) {
+  const text = String(value || "");
+  if (text === "Massage Oils") return "Massagers";
+  if (text === brandCategory) return brandCategory;
+  return Object.hasOwn(defaultBudgets, text) ? text : Object.keys(defaultBudgets)[0];
 }
 
 function normalizeAmount(entry) {
