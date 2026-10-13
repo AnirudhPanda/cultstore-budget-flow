@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=19" />
+    <link rel="stylesheet" href="./styles.css?v=20" />
   </head>
   <body>
     <div class="page-shell">
@@ -256,8 +256,9 @@
                 <input id="poNumber" name="poNumber" type="text" placeholder="CSP309466" required />
               </div>
               <div class="field">
-                <label for="poDate">Date</label>
+                <label for="poDate">PO / invoice date</label>
                 <input id="poDate" name="poDate" type="date" required />
+                <p class="field-note">Backdating is allowed. Use the actual PO or invoice date, even if you are adding it later.</p>
               </div>
               <div class="field" id="categoryField">
                 <label for="category">Category</label>
@@ -342,7 +343,7 @@
             <div>
               <p class="panel-kicker">Transaction view</p>
               <h2>All purchase orders</h2>
-              <p class="panel-copy">Search, filter, and update status inline as invoices land, payments clear, or delays happen.</p>
+              <p class="panel-copy">Search, filter, update status, and correct PO dates inline as invoices land, payments clear, or older POs are added later.</p>
             </div>
             <div class="table-actions">
               <input id="searchInput" type="search" placeholder="Search vendor, PO, owner..." />
@@ -365,7 +366,7 @@
             </div>
           </div>
           <div class="table-meta">
-            <span>Status is managed here for active transactions.</span>
+            <span>Status and dates are managed here for active transactions.</span>
             <span id="tableModeHint">Use filters to review one category, vendor, or payment stage at a time.</span>
           </div>
           <div class="table-wrap">
@@ -415,8 +416,9 @@
             <input id="editPoNumber" name="poNumber" type="text" placeholder="Optional for now" />
           </div>
           <div class="field">
-            <label for="editPoDate">Date</label>
+            <label for="editPoDate">PO / invoice date</label>
             <input id="editPoDate" name="poDate" type="date" required />
+            <p class="field-note">Change this freely for backdated entries.</p>
           </div>
           <div class="field" id="editCategoryField">
             <label for="editCategory">Category</label>
@@ -500,6 +502,6 @@
 
     <input id="rowPdfInput" type="file" accept="application/pdf,.pdf" hidden />
 
-    <script src="./app.js?v=19"></script>
+    <script src="./app.js?v=20"></script>
   </body>
 </html>

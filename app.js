@@ -1545,7 +1545,8 @@ function arrayBufferToBase64(buffer) {
 
 function formatDate(value) {
   if (!value) return "—";
-  const date = new Date(value);
+  const date = parseDateInput(value);
+  if (!date) return "—";
   return new Intl.DateTimeFormat("en-IN", {
     day: "2-digit",
     month: "short",
@@ -1554,12 +1555,19 @@ function formatDate(value) {
 }
 
 function getQuarterFromDate(value) {
-  const date = new Date(value);
+  const date = parseDateInput(value);
+  if (!date) return "JFM";
   const month = date.getMonth() + 1;
   if ([4, 5, 6].includes(month)) return "AMJ";
   if ([7, 8, 9].includes(month)) return "JAS";
   if ([10, 11, 12].includes(month)) return "OND";
   return "JFM";
+}
+
+function parseDateInput(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
 }
 
 function getMonthKey(value) {
