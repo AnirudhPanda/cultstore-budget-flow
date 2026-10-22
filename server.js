@@ -704,6 +704,7 @@ function sanitizeStatus(value) {
 }
 
 function sanitizeRecordType(value) {
+  if (value === "InvoicePlain") return "InvoicePlain";
   return String(value || "").startsWith("Invoice") ? "Invoice" : "PO";
 }
 

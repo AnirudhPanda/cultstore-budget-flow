@@ -513,7 +513,7 @@ function renderSummary() {
     .filter((entry) => entry.recordType === "PO")
     .reduce((sum, entry) => sum + entry.amount, 0);
   const invoiceValue = activeEntries
-    .filter((entry) => entry.recordType === "Invoice")
+    .filter((entry) => entry.recordType === "Invoice" || entry.recordType === "InvoicePlain")
     .reduce((sum, entry) => sum + entry.amount, 0);
   const totalSpend = activeEntries.reduce((sum, entry) => sum + entry.amount, 0);
   const remaining = totalBudget - totalSpend;
@@ -776,7 +776,7 @@ function renderTable() {
               data-record-type="${escapeHtml(entry.recordType)}"
               type="text"
               value="${escapeHtml(entry.poNumber)}"
-              placeholder="${entry.recordType === "Invoice" ? "No PO required" : "Required"}"
+              placeholder="${entry.recordType !== "PO" ? "No PO required" : "Required"}"
             />
           </td>
           <td>
@@ -1031,6 +1031,7 @@ function renderStatusOptions(selectedStatus) {
 }
 
 function formatRecordTypeLabel(value) {
+  if (value === "InvoicePlain") return "Invoice";
   return value === "Invoice" ? invoiceRecordTypeLabel : "PO-based";
 }
 
@@ -1321,14 +1322,14 @@ function updateAmountLabel() {
 }
 
 function updatePoRequirement() {
-  const isInvoiceWithoutPo = refs.recordType.value === "Invoice";
+  const isInvoiceWithoutPo = refs.recordType.value !== "PO";
   refs.poNumber.required = !isInvoiceWithoutPo;
   refs.poNumber.placeholder = isInvoiceWithoutPo ? "No PO required" : "CSP309466";
   refs.recordTypeNote.classList.toggle("hidden", !isInvoiceWithoutPo);
 }
 
 function updateEditPoRequirement() {
-  const isInvoiceWithoutPo = refs.editRecordType.value === "Invoice";
+  const isInvoiceWithoutPo = refs.editRecordType.value !== "PO";
   refs.editPoNumber.required = !isInvoiceWithoutPo;
   refs.editPoNumber.placeholder = isInvoiceWithoutPo ? "No PO required" : "CSP309466";
 }
@@ -1586,6 +1587,7 @@ function formatMonthLabel(monthKey) {
 }
 
 function normalizeRecordType(value) {
+  if (value === "InvoicePlain") return "InvoicePlain";
   return String(value || "").startsWith("Invoice") ? "Invoice" : "PO";
 }
 

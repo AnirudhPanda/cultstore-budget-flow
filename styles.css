@@ -554,7 +554,8 @@ label {
   color: var(--brand-deep);
 }
 
-.basis-pill[data-basis="Invoice"] {
+.basis-pill[data-basis="Invoice"],
+.basis-pill[data-basis="InvoicePlain"] {
   background: rgba(47, 125, 103, 0.14);
   color: var(--mint);
 }
