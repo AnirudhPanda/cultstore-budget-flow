@@ -171,7 +171,7 @@ async function handleApi(request, response, url) {
       UPDATE entries
       SET owner_name = ?, po_number = ?, po_date = ?, category = ?, brand = ?,
         spend_type = ?, spend_head = ?, vendor = ?, record_type = ?, purpose = ?,
-        amount = ?, status = ?, notes = ?
+        amount = ?, status = ?, needed = ?, notes = ?
       WHERE id = ?
     `).run(
       updatedEntry.ownerName,
@@ -186,6 +186,7 @@ async function handleApi(request, response, url) {
       updatedEntry.purpose,
       updatedEntry.amount,
       updatedEntry.status,
+      updatedEntry.needed,
       updatedEntry.notes,
       id
     );
@@ -347,6 +348,7 @@ function initializeDatabase() {
       purpose TEXT NOT NULL,
       amount INTEGER NOT NULL,
       status TEXT NOT NULL,
+      needed TEXT NOT NULL DEFAULT 'Needed',
       notes TEXT NOT NULL,
       attachment_key TEXT NOT NULL,
       attachment_name TEXT NOT NULL,
@@ -356,6 +358,9 @@ function initializeDatabase() {
   `);
 
   const entryColumns = db.prepare("PRAGMA table_info(entries)").all();
+  if (!entryColumns.some((column) => column.name === "needed")) {
+    db.exec(`ALTER TABLE entries ADD COLUMN needed TEXT NOT NULL DEFAULT 'Needed'`);
+  }
   const hasBrandColumn = entryColumns.some((column) => column.name === "brand");
   if (!hasBrandColumn) {
     db.exec(`ALTER TABLE entries ADD COLUMN brand TEXT NOT NULL DEFAULT ''`);
@@ -514,9 +519,9 @@ function insertEntry(entry) {
   db.prepare(`
     INSERT INTO entries (
       id, owner_user_id, owner_name, po_number, po_date, category, brand,
-      spend_type, spend_head, vendor, record_type, purpose, amount, status, notes,
+      spend_type, spend_head, vendor, record_type, purpose, amount, status, needed, notes,
       attachment_key, attachment_name, attachment_uploaded_at, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     entry.id,
     entry.ownerUserId,
@@ -532,6 +537,7 @@ function insertEntry(entry) {
     entry.purpose,
     entry.amount,
     entry.status,
+    entry.needed,
     entry.notes,
     entry.attachmentKey,
     entry.attachmentName,
@@ -608,6 +614,7 @@ function sanitizeEntry(input, sessionUser) {
     purpose: sanitizeText(input.purpose),
     amount: sanitizeAmount(input),
     status: sanitizeStatus(input.status),
+    needed: input.needed === "Not needed" ? "Not needed" : "Needed",
     notes: sanitizeText(input.notes),
     attachmentKey: sanitizeText(input.attachmentKey),
     attachmentName: sanitizeAttachmentName(input.attachmentName),
@@ -640,6 +647,7 @@ function mapEntryRow(row) {
     purpose: row.purpose,
     amount: row.amount,
     status: row.status,
+    needed: row.needed,
     notes: row.notes,
     attachmentKey: row.attachment_key,
     attachmentName: row.attachment_name,

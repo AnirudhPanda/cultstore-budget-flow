@@ -505,9 +505,13 @@ function renderViewState() {
     : "Use filters to review one category, vendor, or payment stage at a time.";
 }
 
+function isActiveSpend(entry) {
+  return entry.status !== "Cancelled" && entry.needed !== "Not needed";
+}
+
 function renderSummary() {
   const budgets = getActiveBudgets();
-  const activeEntries = getViewEntries().filter((entry) => entry.status !== "Cancelled");
+  const activeEntries = getViewEntries().filter(isActiveSpend);
   const totalBudget = Object.values(budgets).reduce((sum, budget) => sum + budget, 0);
   const poValue = activeEntries
     .filter((entry) => entry.recordType === "PO")
@@ -602,7 +606,7 @@ function renderBudgetList() {
 
 function renderBrandOverview() {
   const brandSpend = getBrandEntries()
-    .filter((entry) => entry.status !== "Cancelled")
+    .filter(isActiveSpend)
     .reduce((sum, entry) => sum + entry.amount, 0);
   const remaining = state.brandBudget - brandSpend;
   const utilisation = state.brandBudget > 0 ? Math.min(brandSpend / state.brandBudget, 1) : 0;
@@ -758,7 +762,7 @@ function renderTable() {
   if (filtered.length === 0) {
     refs.poTableBody.innerHTML = `
       <tr>
-        <td colspan="14" class="empty-state">No purchase orders match the current filters.</td>
+        <td colspan="15" class="empty-state">No purchase orders match the current filters.</td>
       </tr>
     `;
     return;
@@ -804,6 +808,12 @@ function renderTable() {
               ${renderStatusOptions(entry.status)}
             </select>
           </td>
+          <td>
+            <select class="table-needed-select table-status-select" data-id="${escapeHtml(entry.id)}" aria-label="Needed status for ${escapeHtml(entry.poNumber || entry.purpose)}">
+              <option value="Needed" ${entry.needed !== "Not needed" ? "selected" : ""}>Needed</option>
+              <option value="Not needed" ${entry.needed === "Not needed" ? "selected" : ""}>Not needed</option>
+            </select>
+          </td>
           <td class="table-row-actions">
             <button class="inline-action edit-btn" type="button" data-id="${escapeHtml(entry.id)}">Edit</button>
             <button class="delete-btn" data-id="${escapeHtml(entry.id)}">Delete</button>
@@ -813,7 +823,7 @@ function renderTable() {
     )
     .join("");
 
-  refs.poTableBody.querySelectorAll(".table-status-select").forEach((select) => {
+  refs.poTableBody.querySelectorAll(".table-status-select:not(.table-needed-select)").forEach((select) => {
     select.addEventListener("change", async () => {
       const nextStatus = select.value;
       select.dataset.status = nextStatus;
@@ -822,6 +832,28 @@ function renderTable() {
         body: JSON.stringify({ status: nextStatus })
       });
       await refreshState(`Status updated to ${nextStatus}`);
+    });
+  });
+
+  refs.poTableBody.querySelectorAll(".table-needed-select").forEach((select) => {
+    let previousValue = select.value;
+    select.addEventListener("change", async () => {
+      const nextValue = select.value;
+      select.disabled = true;
+      try {
+        await apiFetch(`/api/entries/${encodeURIComponent(select.dataset.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ needed: nextValue })
+        });
+        previousValue = nextValue;
+        await refreshState(`Marked ${nextValue.toLowerCase()}`);
+      } catch (error) {
+        console.error(error);
+        select.value = previousValue;
+        setSyncStatus("Could not update needed status", "error");
+      } finally {
+        select.disabled = false;
+      }
     });
   });
 
@@ -930,7 +962,7 @@ function renderTable() {
 
 function getSpendByCategory() {
   return getCategoryEntries().reduce((acc, entry) => {
-    if (entry.status === "Cancelled") return acc;
+    if (!isActiveSpend(entry)) return acc;
     acc[entry.category] = (acc[entry.category] || 0) + entry.amount;
     return acc;
   }, {});
@@ -951,7 +983,7 @@ function populateMonthFilterOptions() {
 
 function getSpendByFootwearBrand() {
   return getCategoryEntries().reduce((acc, entry) => {
-    if (entry.status === "Cancelled" || entry.category !== "Footwear" || !entry.brand) return acc;
+    if (!isActiveSpend(entry) || entry.category !== "Footwear" || !entry.brand) return acc;
     acc[entry.brand] = (acc[entry.brand] || 0) + entry.amount;
     return acc;
   }, {});
@@ -959,7 +991,7 @@ function getSpendByFootwearBrand() {
 
 function getSpendBySpendHead() {
   return getViewEntries().reduce((acc, entry) => {
-    if (entry.status === "Cancelled") return acc;
+    if (!isActiveSpend(entry)) return acc;
     acc[entry.spendHead] = (acc[entry.spendHead] || 0) + entry.amount;
     return acc;
   }, Object.fromEntries(spendHeadOptions.map((spendHead) => [spendHead, 0])));
@@ -974,7 +1006,7 @@ function getCategorySpendHeadMatrix() {
   );
 
   return getCategoryEntries().reduce((acc, entry) => {
-    if (entry.status === "Cancelled") return acc;
+    if (!isActiveSpend(entry)) return acc;
     acc[entry.category][entry.spendHead] = (acc[entry.category][entry.spendHead] || 0) + entry.amount;
     return acc;
   }, base);
@@ -982,7 +1014,7 @@ function getCategorySpendHeadMatrix() {
 
 function getQuarterTotals() {
   return getCategoryEntries().reduce((acc, entry) => {
-    if (entry.status === "Cancelled") return acc;
+    if (!isActiveSpend(entry)) return acc;
     const quarter = getQuarterFromDate(entry.poDate);
     acc[quarter] = (acc[quarter] || 0) + entry.amount;
     return acc;
@@ -998,7 +1030,7 @@ function getQuarterCategoryTotals() {
   };
 
   return getCategoryEntries().reduce((acc, entry) => {
-    if (entry.status === "Cancelled") return acc;
+    if (!isActiveSpend(entry)) return acc;
     const quarter = getQuarterFromDate(entry.poDate);
     acc[quarter][entry.category] = (acc[quarter][entry.category] || 0) + entry.amount;
     return acc;
@@ -1152,6 +1184,7 @@ function downloadSheet() {
     "Amount",
     "Attachment Name",
     "Status",
+    "Needed?",
     "Notes",
     "Created At"
   ];
@@ -1170,6 +1203,7 @@ function downloadSheet() {
     entry.amount,
     entry.attachmentName,
     entry.status,
+    entry.needed || "Needed",
     entry.notes,
     entry.createdAt || ""
   ]);
