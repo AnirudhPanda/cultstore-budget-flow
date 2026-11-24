@@ -117,6 +117,7 @@ const refs = {
   editOwner: document.getElementById("editOwner"),
   editPoNumber: document.getElementById("editPoNumber"),
   editPoDate: document.getElementById("editPoDate"),
+  editSpendView: document.getElementById("editSpendView"),
   editCategory: document.getElementById("editCategory"),
   editCategoryField: document.getElementById("editCategoryField"),
   editBrandField: document.getElementById("editBrandField"),
@@ -205,6 +206,7 @@ function bindEvents() {
   });
   refs.editEntryForm.addEventListener("submit", handleEditSubmit);
   refs.editCategory.addEventListener("change", updateEditBrandField);
+  refs.editSpendView.addEventListener("change", updateEditSpendView);
   refs.editRecordType.addEventListener("change", updateEditPoRequirement);
   refs.editPartnerType.addEventListener("change", syncEditSpendHeadFromPartnerType);
   refs.editEntryCancel.addEventListener("click", closeEditModal);
@@ -349,7 +351,7 @@ function populateCategoryOptions() {
     `<option value="${multipleCategoriesValue}">${multipleCategoriesLabel}</option>`
   );
 
-  refs.editCategory.innerHTML = categories
+  refs.editCategory.innerHTML = `<option value="">Select a category</option>` + categories
     .map((category) => `<option value="${category}">${category}</option>`)
     .join("");
 
@@ -361,10 +363,10 @@ function populateCategoryOptions() {
   refs.categorySelect.value = [...categories, multipleCategoriesValue].includes(currentCategory)
     ? currentCategory
     : categories[0];
-  refs.editCategory.value = categories.includes(currentEditCategory) ? currentEditCategory : categories[0];
+  refs.editCategory.value = categories.includes(currentEditCategory) ? currentEditCategory : "";
   refs.filterCategory.value = ["all", ...categories].includes(currentFilter) ? currentFilter : "all";
   handleCategoryChange();
-  updateEditBrandField();
+  updateEditSpendView();
 }
 
 function populatePartnerTypeOptions() {
@@ -1087,9 +1089,8 @@ function openEditModal(entry) {
   refs.editOwner.value = entry.ownerName;
   refs.editPoNumber.value = entry.poNumber;
   refs.editPoDate.value = entry.poDate;
-  refs.editCategoryField.classList.toggle("hidden", isBrandEntry);
-  refs.editCategory.disabled = isBrandEntry;
-  refs.editCategory.value = isBrandEntry ? Object.keys(state.budgets)[0] : entry.category;
+  refs.editSpendView.value = isBrandEntry ? "brand" : "category";
+  refs.editCategory.value = isBrandEntry ? "" : entry.category;
   refs.editPartnerType.value = entry.partnerType;
   refs.editVendor.value = entry.vendor;
   refs.editRecordType.value = entry.recordType;
@@ -1098,7 +1099,7 @@ function openEditModal(entry) {
   refs.editAmount.value = entry.amount;
   refs.editNotes.value = entry.notes;
   refs.editStatus.value = entry.status;
-  updateEditBrandField(isBrandEntry);
+  updateEditSpendView();
   refs.editBrand.value = entry.brand || "Cult";
   refs.editSpendHead.value = spendHeadOptions.includes(entry.spendHead)
     ? entry.spendHead
@@ -1121,8 +1122,7 @@ function closeEditModal() {
 async function handleEditSubmit(event) {
   event.preventDefault();
   const formData = new FormData(refs.editEntryForm);
-  const currentEntry = state.entries.find((entry) => entry.id === refs.editEntryId.value);
-  const isBrandEntry = currentEntry?.category === brandCategory;
+  const isBrandEntry = refs.editSpendView.value === "brand";
   const payload = {
     ownerName: String(formData.get("ownerName")).trim(),
     poNumber: String(formData.get("poNumber")).trim(),
@@ -1396,8 +1396,15 @@ function updateBrandField() {
   updateSplitSummary();
 }
 
-function updateEditBrandField(forceHidden = false) {
-  if (forceHidden) {
+function updateEditSpendView() {
+  const isBrandEntry = refs.editSpendView.value === "brand";
+  refs.editCategoryField.classList.toggle("hidden", isBrandEntry);
+  refs.editCategory.disabled = isBrandEntry;
+  updateEditBrandField();
+}
+
+function updateEditBrandField() {
+  if (refs.editSpendView.value === "brand") {
     refs.editBrandField.classList.add("hidden");
     refs.editBrand.disabled = true;
     refs.editBrand.value = "Cult";

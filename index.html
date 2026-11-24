@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=22" />
+    <link rel="stylesheet" href="./styles.css?v=23" />
   </head>
   <body>
     <div class="page-shell">
@@ -422,6 +422,13 @@
             <input id="editPoDate" name="poDate" type="date" required />
             <p class="field-note">Change this freely for backdated entries.</p>
           </div>
+          <div class="field">
+            <label for="editSpendView">Spend view</label>
+            <select id="editSpendView" name="spendView">
+              <option value="category">Category Spend</option>
+              <option value="brand">Brand Spend</option>
+            </select>
+          </div>
           <div class="field" id="editCategoryField">
             <label for="editCategory">Category</label>
             <select id="editCategory" name="category" required></select>
@@ -505,6 +512,6 @@
 
     <input id="rowPdfInput" type="file" accept="application/pdf,.pdf" hidden />
 
-    <script src="./app.js?v=22"></script>
+    <script src="./app.js?v=23"></script>
   </body>
 </html>
